@@ -32725,6 +32725,7 @@ class CodexRunner {
             commandInstruction: [
                 'Apply only the open review feedback listed below.',
                 'Resolve the requested changes in the local repository.',
+                'If the review feedback targets persisted repository artifacts under `plans/` or `specs/`, those files are explicitly in scope for this run and should be edited directly.',
                 'Do not ask clarifying questions.',
                 'If the feedback is insufficient or ambiguous, fail instead of asking follow-up questions.',
                 'Do not make unrelated edits.',
@@ -32756,6 +32757,7 @@ class CodexRunner {
             commandInstruction: [
                 'Apply the following refinement request in the local repository.',
                 'You must inspect the repository yourself and make only the changes needed for this refinement.',
+                'If the refinement instruction targets persisted repository artifacts under `plans/` or `specs/`, those files are explicitly in scope for this run and should be edited directly.',
                 'Do not ask clarifying questions.',
                 'If the refinement instruction is insufficient or ambiguous, fail instead of asking follow-up questions.',
                 '',
