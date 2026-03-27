@@ -11,6 +11,10 @@ export interface EpicSplitTask {
   specMarkdown: string;
 }
 
+interface EpicSplitResult {
+  tasks: EpicSplitTask[];
+}
+
 export interface PlanResult {
   action: 'plan' | 'question';
   content: string;
@@ -44,7 +48,7 @@ interface CodexSdkTurn {
 
 export class CodexRunner {
   async generateEpicSplit(title: string, body: string, modelConf: string = 'strong'): Promise<EpicSplitTask[]> {
-    return this.runStructuredTask<EpicSplitTask[]>(
+    const result = await this.runStructuredTask<EpicSplitResult>(
       {
         commandName: 'ready for specification',
         featureTitle: title,
@@ -60,29 +64,38 @@ export class CodexRunner {
           'Do not implement code and do not modify repository files.',
         ].join('\n'),
         outputContract: [
-          'Return a JSON array.',
-          'The array must contain 3 to 5 items.',
-          'An empty array is invalid.',
-          'Each item must include:',
+          'Return a JSON object with a `tasks` array.',
+          'The `tasks` array must contain 3 to 5 items.',
+          'An empty `tasks` array is invalid.',
+          'Each item in `tasks` must include:',
           '- `title`: string',
           '- `specMarkdown`: string following `specs/templates/feature-spec.md`',
           'Return only valid JSON with no markdown fences and no commentary.',
         ].join('\n'),
       },
       {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['title', 'specMarkdown'],
-          properties: {
-            title: { type: 'string' },
-            specMarkdown: { type: 'string' },
+        type: 'object',
+        additionalProperties: false,
+        required: ['tasks'],
+        properties: {
+          tasks: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['title', 'specMarkdown'],
+              properties: {
+                title: { type: 'string' },
+                specMarkdown: { type: 'string' },
+              },
+            },
           },
         },
       },
       modelConf
     );
+
+    return this.validateEpicSplitResult(result);
   }
 
   async generateImplementationPlan(title: string, body: string, force: boolean, modelConf: string = 'strong'): Promise<PlanResult> {
@@ -514,6 +527,32 @@ export class CodexRunner {
     }
 
     return value as T;
+  }
+
+  private validateEpicSplitResult(result: EpicSplitResult): EpicSplitTask[] {
+    if (!Array.isArray(result.tasks)) {
+      throw new Error('Codex returned JSON, but `tasks` was not the expected array result.');
+    }
+
+    if (result.tasks.length === 0) {
+      throw new Error('Codex returned an empty result array. Refusing to treat that as a successful structured response.');
+    }
+
+    for (const item of result.tasks) {
+      if (!this.isRecord(item)) {
+        throw new Error('Codex returned an array item that is not an object.');
+      }
+
+      if (typeof item.title !== 'string' || item.title.trim().length === 0) {
+        throw new Error('Codex returned an invalid array item: `title` must be a non-empty string.');
+      }
+
+      if (typeof item.specMarkdown !== 'string' || item.specMarkdown.trim().length === 0) {
+        throw new Error('Codex returned an invalid array item: `specMarkdown` must be a non-empty string.');
+      }
+    }
+
+    return result.tasks;
   }
 
   private isRecord(value: unknown): value is Record<string, any> {

@@ -34,7 +34,7 @@ describe('CodexRunner', () => {
   it('uses a stricter specification prompt for epic splitting', async () => {
     const runner = new CodexRunner();
     const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
-      finalResponse: '[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"}]',
+      finalResponse: '{"tasks":[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"},{"title":"Spec 2","specMarkdown":"# Feature: Spec 2"},{"title":"Spec 3","specMarkdown":"# Feature: Spec 3"}]}',
       items: [],
     });
     await runner.generateEpicSplit('Epic', 'Spec');
@@ -46,7 +46,7 @@ describe('CodexRunner', () => {
       expect.any(Object)
     );
     expect(executeSpy.mock.calls[0][0]).toContain('Do not return an empty array.');
-    expect(executeSpy.mock.calls[0][0]).toContain('The array must contain 3 to 5 items.');
+    expect(executeSpy.mock.calls[0][0]).toContain('The `tasks` array must contain 3 to 5 items.');
     expect(executeSpy.mock.calls[0][0]).toContain('Return only valid JSON with no markdown fences and no commentary.');
   });
 
@@ -118,11 +118,14 @@ describe('CodexRunner', () => {
   it('accepts fenced JSON from the final response', async () => {
     const runner = new CodexRunner();
     jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
-      finalResponse: '```json\n[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"}]\n```',
+      finalResponse:
+        '```json\n{"tasks":[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"},{"title":"Spec 2","specMarkdown":"# Feature: Spec 2"},{"title":"Spec 3","specMarkdown":"# Feature: Spec 3"}]}\n```',
       items: [],
     });
     await expect(runner.generateEpicSplit('Epic', 'Spec')).resolves.toEqual([
       { title: 'Spec 1', specMarkdown: '# Feature: Spec 1' },
+      { title: 'Spec 2', specMarkdown: '# Feature: Spec 2' },
+      { title: 'Spec 3', specMarkdown: '# Feature: Spec 3' },
     ]);
   });
 
@@ -231,7 +234,7 @@ describe('CodexRunner', () => {
   it('rejects empty arrays for epic split results', async () => {
     const runner = new CodexRunner();
     jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
-      finalResponse: '[]',
+      finalResponse: '{"tasks":[]}',
       items: [],
     });
     await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
@@ -242,7 +245,7 @@ describe('CodexRunner', () => {
   it('rejects empty required strings in array items', async () => {
     const runner = new CodexRunner();
     jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
-      finalResponse: '[{"title":"","specMarkdown":"# Feature: Spec 1"}]',
+      finalResponse: '{"tasks":[{"title":"","specMarkdown":"# Feature: Spec 1"}]}',
       items: [],
     });
     await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
