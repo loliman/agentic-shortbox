@@ -4,6 +4,13 @@ import { GitManager } from './git/manager';
 import { parseCommand, parseConfiguration } from '../core/parser';
 import { extractCurrentState, evaluateTransition, IllegalTransitionError } from '../core/state-machine';
 
+class MissingPlanError extends Error {
+  constructor() {
+    super('Cannot start implementation because no implementation plan exists yet.');
+    this.name = 'MissingPlanError';
+  }
+}
+
 export class BotController {
   private octokit: any;
   private ctx: { owner: string; repo: string };
@@ -153,6 +160,11 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
 
   // 5. IMPLEMENTATION
   async handleImplementation(payload: any, config: any) {
+    const hasPlan = await this.hasImplementationPlan(payload.number);
+    if (!hasPlan) {
+      throw new MissingPlanError();
+    }
+
     await this.postStatus(payload.number, "Executing local implementation...");
     
     const issueData = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: payload.number });
@@ -162,7 +174,7 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
     const codeOperations = await agent.generateCode(issueData.data.title, issueData.data.body);
     
     const git = new GitManager(process.env.GITHUB_TOKEN || '');
-    const branchName = `ai-implementation-${payload.number}-${Date.now()}`;
+    const branchName = this.buildImplementationBranchName(payload.number, issueData.data.title || '');
     
     // Git checkouts locally
     await git.checkoutNewBranch(branchName);
@@ -216,8 +228,38 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
     await this.octokit.rest.issues.addLabels({ ...this.ctx, issue_number: issueNumber, labels: [newLabel] });
   }
 
+  private async hasImplementationPlan(issueNumber: number) {
+    const comments = await this.octokit.rest.issues.listComments({
+      ...this.ctx,
+      issue_number: issueNumber,
+      per_page: 100
+    });
+
+    return comments.data.some((comment: any) => {
+      const body = typeof comment.body === 'string' ? comment.body : '';
+      return body.startsWith('**Implementation Plan**');
+    });
+  }
+
+  private buildImplementationBranchName(issueNumber: number, issueTitle: string) {
+    const slug = issueTitle
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^\w\s-]/g, '')
+      .trim()
+      .replace(/[\s_]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 48);
+
+    return `codex/issue-${issueNumber}-${slug || 'implementation'}`;
+  }
+
   private formatSystemError(error: { message?: string }) {
     const message = error.message || 'Unknown error';
+    if (error instanceof MissingPlanError) {
+      return '🤖 **Workflow Error**\n\nI cannot start implementation yet because this issue does not have an approved implementation plan. Please run `ready for planning` first and review the generated plan before trying `ready for implementation` again.';
+    }
     const guidance = message.includes('GitHub Actions is not permitted to create or approve pull requests')
       ? '\n\nGitHub is rejecting PR creation from the workflow token. Enable the repository setting `Allow GitHub Actions to create and approve pull requests` under `Settings -> Actions -> General -> Workflow permissions`, then rerun the command.'
       : '\n\nThe LLM Controller encountered a critical failure. See Action Logs for details.';

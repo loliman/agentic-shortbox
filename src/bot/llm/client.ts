@@ -2,7 +2,7 @@ import { OpenAI } from 'openai';
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
 import path from 'path';
-import { generateDefinePrompt } from './prompts';
+import { generateCodePrompt, generateDefinePrompt } from './prompts';
 
 export interface EpicSplitTask {
   title: string;
@@ -107,7 +107,7 @@ export class LLMClient {
 
   async generateCode(title: string, body: string): Promise<{ path: string, content: string }[]> {
     const sys = this.gatherSystemContext();
-    const prompt = `\n\n${sys}\n\n=== TASK: CODE GENERATION ===\nYou are an Engineer writing code to implement an issue/fix. Do not write markdown blocks.\nIssue: ${title}\nInstructions: ${body}\n\nReturn EXACTLY a JSON array: [{ path: string, content: string }] (no markdown wrapping).`;
+    const prompt = `${sys}\n\n${generateCodePrompt(title, body)}`;
     return this.askJSON(prompt);
   }
 
@@ -143,7 +143,31 @@ export class LLMClient {
     try {
       return JSON.parse(raw) as T;
     } catch (e: any) {
+      const repaired = await this.tryRepairJSON(raw, agentConf, modelConf);
+      if (repaired !== null) {
+        return repaired as T;
+      }
+
       throw new Error(`LLM output was not valid JSON. Response excerpt: ${raw.slice(0, 100)}`);
+    }
+  }
+
+  private async tryRepairJSON(raw: string, agentConf: string, modelConf: string): Promise<unknown | null> {
+    const repairPrompt = `The following text was intended to be valid JSON but failed to parse.
+Return ONLY valid JSON.
+Do not add explanations.
+Do not change the structure or meaning.
+Escape all embedded newlines and quotes correctly.
+
+Broken JSON:
+${raw}`;
+
+    const repairedRaw = await this.ask(repairPrompt, agentConf, modelConf);
+
+    try {
+      return JSON.parse(repairedRaw);
+    } catch {
+      return null;
     }
   }
 }

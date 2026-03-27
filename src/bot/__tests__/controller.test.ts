@@ -23,6 +23,7 @@ describe('BotController', () => {
           addLabels: jest.fn().mockResolvedValue({}),
           removeLabel: jest.fn().mockResolvedValue({}),
           get: jest.fn().mockResolvedValue({ data: { title: 'Test', body: 'Body' } }),
+          listComments: jest.fn().mockResolvedValue({ data: [] }),
           create: jest.fn().mockResolvedValue({ data: { number: 42 } })
         },
         pulls: {
@@ -101,6 +102,9 @@ describe('BotController', () => {
         applyFileSystemChanges: jest.fn(),
         commitAndPush: jest.fn()
       }));
+      mockOctokit.rest.issues.listComments.mockResolvedValueOnce({
+        data: [{ body: '**Implementation Plan**\n\n# Plan' }]
+      });
       mockOctokit.rest.pulls.create.mockRejectedValueOnce(
         new Error('GitHub Actions is not permitted to create or approve pull requests.')
       );
@@ -112,6 +116,18 @@ describe('BotController', () => {
       const postCall = mockOctokit.rest.issues.createComment.mock.calls.at(-1)?.[0].body;
       expect(postCall).toContain('Allow GitHub Actions to create and approve pull requests');
       expect(postCall).toContain('Settings -> Actions -> General -> Workflow permissions');
+    });
+
+    it('rejects implementation when no plan comment exists yet', async () => {
+      const payload = { number: 8, author: 'tester', body: 'ready for implementation', labels: ['state:planned'], isPR: false };
+
+      await expect(controller.handleCommand(payload)).rejects.toThrow(
+        'Cannot start implementation because no implementation plan exists yet.'
+      );
+
+      const postCall = mockOctokit.rest.issues.createComment.mock.calls.at(-1)?.[0].body;
+      expect(postCall).toContain('does not have an approved implementation plan');
+      expect(postCall).toContain('ready for planning');
     });
   });
 
@@ -191,16 +207,20 @@ describe('BotController', () => {
           commitAndPush: jest.fn()
        };
        (GitManager as jest.Mock).mockImplementation(() => mockGit);
+       mockOctokit.rest.issues.listComments.mockResolvedValueOnce({
+          data: [{ body: '**Implementation Plan**\n\n# Architectural Plan' }]
+       });
 
        const payload = { number: 7, author: 'eve', body: 'ready for implementation', labels: ['state:planned'], isPR: false };
        await controller.handleCommand(payload);
 
-       expect(mockGit.checkoutNewBranch).toHaveBeenCalled();
+       expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('codex/issue-7-test');
        expect(mockGit.applyFileSystemChanges).toHaveBeenCalledWith([{ path: 'foo.ts', content: 'bar' }]);
-       expect(mockGit.commitAndPush).toHaveBeenCalled();
+       expect(mockGit.commitAndPush).toHaveBeenCalledWith('Fix #7: Auto implementation', 'codex/issue-7-test');
 
        expect(mockOctokit.rest.pulls.create).toHaveBeenCalledWith(expect.objectContaining({
           title: 'AI Implementation for #7',
+          head: 'codex/issue-7-test',
           base: 'main'
        }));
        expect(mockOctokit.rest.issues.addLabels).toHaveBeenCalledWith(expect.objectContaining({

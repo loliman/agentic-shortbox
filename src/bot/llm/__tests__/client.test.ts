@@ -146,7 +146,10 @@ describe('LLMClient', () => {
     it('throws explicit errors on malformed JSON responses', async () => {
       process.env.OPENAI_API_KEY = 'mock-openai';
       const mockCreate = jest.fn().mockResolvedValue({
-        choices: [{ message: { content: 'Not really JSON' } }]
+        choices: [
+          { message: { content: 'Not really JSON' } },
+          { message: { content: 'Still not JSON' } }
+        ]
       });
       (OpenAI as unknown as jest.Mock).mockImplementation(() => ({
          chat: { completions: { create: mockCreate } }
@@ -154,6 +157,27 @@ describe('LLMClient', () => {
 
       const client = new LLMClient();
       await expect(client.generateCode('Epic', 'Body')).rejects.toThrow('LLM output was not valid JSON');
+    });
+
+    it('repairs malformed JSON code output with a second model pass', async () => {
+      process.env.OPENAI_API_KEY = 'mock-openai';
+      const mockCreate = jest.fn().mockResolvedValueOnce({
+        choices: [{ message: { content: '[{"path":"src/a.ts","content":"line 1\nline 2"}]' } }]
+      }).mockResolvedValueOnce({
+        choices: [{ message: { content: '[{"path":"src/a.ts","content":"line 1\\nline 2"}]' } }]
+      });
+      (OpenAI as unknown as jest.Mock).mockImplementation(() => ({
+        chat: { completions: { create: mockCreate } }
+      }));
+      (fs.existsSync as jest.Mock).mockReturnValue(false);
+      (fs.readFileSync as jest.Mock).mockReturnValue('');
+
+      const client = new LLMClient();
+      const result = await client.generateCode('Epic', 'Body');
+
+      expect(result).toEqual([{ path: 'src/a.ts', content: 'line 1\nline 2' }]);
+      expect(mockCreate).toHaveBeenCalledTimes(2);
+      expect(mockCreate.mock.calls[1][0].messages[0].content).toContain('Return ONLY valid JSON');
     });
   });
 });

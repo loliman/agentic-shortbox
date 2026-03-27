@@ -65,6 +65,21 @@ describe('GitHub Action Router (main)', () => {
     }));
   });
 
+  it('ignores bot-authored issue comments', async () => {
+    (github as any).context.eventName = 'issue_comment';
+    (github as any).context.payload = {
+      action: 'created',
+      issue: { number: 42, labels: [{ name: 'state:idle' }] },
+      comment: { body: 'ready for planning', user: { login: 'github-actions[bot]', type: 'Bot' } }
+    };
+
+    await main();
+
+    const mockControllerInstance = (BotController as jest.Mock).mock.instances[0];
+    expect(mockControllerInstance.handleCommand).not.toHaveBeenCalled();
+    expect(core.info).toHaveBeenCalledWith('[Action] Ignoring bot-authored comment event.');
+  });
+
   it('sets failed and exits 1 on catastrophic top-level errors', async () => {
     (github as any).context.eventName = 'issues';
     (github as any).context.payload = {

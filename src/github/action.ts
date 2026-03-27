@@ -38,6 +38,10 @@ export async function main() {
       const comment = github.context.payload.comment;
       
       if (!issue || !comment) return;
+      if (comment.user?.type === 'Bot') {
+        core.info('[Action] Ignoring bot-authored comment event.');
+        return;
+      }
 
       const body = comment.body;
       const author = comment.user.login;

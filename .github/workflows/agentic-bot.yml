@@ -9,8 +9,8 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    # Ignore Bot Activities
-    if: github.event.sender.type != 'Bot'
+    # Ignore bot-authored comments, but still react to newly opened issues created by automation.
+    if: github.event_name != 'issue_comment' || github.event.sender.type != 'Bot'
 
     permissions:
       contents: write
