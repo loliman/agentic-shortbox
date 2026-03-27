@@ -32793,7 +32793,8 @@ class CodexRunner {
     }
     async executeStructuredTurn(prompt, schema, modelConf, codexEnv) {
         const sdkModulePath = (0, url_1.pathToFileURL)(path_1.default.resolve(process.cwd(), 'node_modules/@openai/codex-sdk/dist/index.js')).href;
-        const { Codex } = await Promise.resolve(`${sdkModulePath}`).then(s => __importStar(require(s)));
+        const dynamicImport = new Function('modulePath', 'return import(modulePath);');
+        const { Codex } = await dynamicImport(sdkModulePath);
         const codex = new Codex({
             apiKey: codexEnv.OPENAI_API_KEY,
             baseUrl: codexEnv.OPENAI_BASE_URL,

@@ -263,7 +263,10 @@ export class CodexRunner {
     const sdkModulePath = pathToFileURL(
       path.resolve(process.cwd(), 'node_modules/@openai/codex-sdk/dist/index.js')
     ).href;
-    const { Codex } = await import(sdkModulePath);
+    const dynamicImport = new Function('modulePath', 'return import(modulePath);') as (
+      modulePath: string
+    ) => Promise<{ Codex: new (options?: Record<string, unknown>) => any }>;
+    const { Codex } = await dynamicImport(sdkModulePath);
     const codex = new Codex({
       apiKey: codexEnv.OPENAI_API_KEY,
       baseUrl: codexEnv.OPENAI_BASE_URL,
