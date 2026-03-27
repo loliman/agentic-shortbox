@@ -33349,6 +33349,7 @@ class BotController {
         }
         else {
             await this.postStatus(payload.number, ['**Implementation Plan**', '_This plan is formatted as a repository-ready artifact for `plans/`._', result.content].join('\n\n'));
+            await this.postStatus(payload.number, this.buildPlanningNextStepsComment());
             await this.replaceStateLabel(payload.number, payload.labels, 'state:planned');
         }
     }
@@ -33435,6 +33436,7 @@ class BotController {
         }
         await this.postStatus(payload.number, this.buildEditSummaryComment('🛠️ **Rework applied**', result.summary, result.changedFiles, undefined, persistedArtifacts));
         await this.postStatus(payload.number, `✅ Addressed feedback pushed to ${headBranch}.`);
+        await this.postStatus(payload.number, this.buildPullRequestNextStepsComment('rework'));
     }
     async handleReviewRefinement(payload, refinementInstruction, config) {
         if (!refinementInstruction.trim()) {
@@ -33465,6 +33467,7 @@ class BotController {
         }
         await this.postStatus(payload.number, this.buildEditSummaryComment('✨ **Refinement applied**', result.summary, result.changedFiles, refinementInstruction, persistedArtifacts));
         await this.postStatus(payload.number, `✅ Refinement updates pushed to ${headBranch}.`);
+        await this.postStatus(payload.number, this.buildPullRequestNextStepsComment('refinement'));
     }
     // -- Utilities --
     async postStatus(issueNumber, body) {
@@ -33592,6 +33595,27 @@ class BotController {
             `Reviewer: @${author}`,
         ].join('\n\n');
     }
+    buildPlanningNextStepsComment() {
+        return [
+            '**What you can do next**',
+            '1. Review the generated implementation plan in this issue.',
+            '2. If the plan looks good, comment `ready for implementation` to create a PR.',
+            '3. If the plan needs adjustment, comment with feedback and then rerun planning when ready.',
+        ].join('\n\n');
+    }
+    buildPullRequestNextStepsComment(action) {
+        const actionLine = action === 'rework'
+            ? 'The requested review changes are now on the PR branch.'
+            : 'The requested refinement is now on the PR branch.';
+        return [
+            '**What you can do next**',
+            actionLine,
+            '1. Review the updated diff in the PR.',
+            '2. If more line-level changes are needed, leave review comments and trigger `ready for rework` again.',
+            '3. If broader polish is needed, comment `ready for refinement <instruction>`.',
+            '4. If everything looks good, merge the PR.',
+        ].join('\n\n');
+    }
     buildImplementationBranchName(issueNumber, issueTitle) {
         const slug = issueTitle
             .toLowerCase()
@@ -33632,8 +33656,7 @@ class BotController {
         if (operations.length === 0) {
             return [];
         }
-        await git.applyFileSystemChanges(operations);
-        return operations.map((operation) => operation.path);
+        return git.applyMissingFileSystemChanges(operations);
     }
     buildContextArtifactOperations(issueNumber, issueTitle, spec, plan) {
         const baseName = this.buildArtifactBaseName(issueNumber, issueTitle);
@@ -33768,6 +33791,21 @@ class GitManager {
             fs_1.default.writeFileSync(fullPath, op.content, 'utf8');
             core.info(`[GitManager] Wrote changes to: ${op.path}`);
         }
+    }
+    async applyMissingFileSystemChanges(operations) {
+        const createdPaths = [];
+        for (const op of operations) {
+            const fullPath = path_1.default.resolve(this.workspace, op.path);
+            if (fs_1.default.existsSync(fullPath)) {
+                core.info(`[GitManager] Keeping existing file unchanged: ${op.path}`);
+                continue;
+            }
+            fs_1.default.mkdirSync(path_1.default.dirname(fullPath), { recursive: true });
+            fs_1.default.writeFileSync(fullPath, op.content, 'utf8');
+            createdPaths.push(op.path);
+            core.info(`[GitManager] Wrote missing artifact to: ${op.path}`);
+        }
+        return createdPaths;
     }
     async checkoutNewBranch(branchName) {
         core.info(`[GitManager] Checking out branch: ${branchName} in ${this.workspace}`);

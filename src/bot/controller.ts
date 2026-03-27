@@ -232,6 +232,7 @@ export class BotController {
         payload.number,
         ['**Implementation Plan**', '_This plan is formatted as a repository-ready artifact for `plans/`._', result.content].join('\n\n')
       );
+      await this.postStatus(payload.number, this.buildPlanningNextStepsComment());
       await this.replaceStateLabel(payload.number, payload.labels, 'state:planned');
     }
   }
@@ -361,6 +362,7 @@ export class BotController {
      );
      
      await this.postStatus(payload.number, `✅ Addressed feedback pushed to ${headBranch}.`);
+     await this.postStatus(payload.number, this.buildPullRequestNextStepsComment('rework'));
   }
 
   async handleReviewRefinement(payload: any, refinementInstruction: string, config: any) {
@@ -409,6 +411,7 @@ export class BotController {
        this.buildEditSummaryComment('✨ **Refinement applied**', result.summary, result.changedFiles, refinementInstruction, persistedArtifacts)
      );
      await this.postStatus(payload.number, `✅ Refinement updates pushed to ${headBranch}.`);
+     await this.postStatus(payload.number, this.buildPullRequestNextStepsComment('refinement'));
   }
   
   // -- Utilities --
@@ -596,6 +599,31 @@ export class BotController {
     ].join('\n\n');
   }
 
+  private buildPlanningNextStepsComment() {
+    return [
+      '**What you can do next**',
+      '1. Review the generated implementation plan in this issue.',
+      '2. If the plan looks good, comment `ready for implementation` to create a PR.',
+      '3. If the plan needs adjustment, comment with feedback and then rerun planning when ready.',
+    ].join('\n\n');
+  }
+
+  private buildPullRequestNextStepsComment(action: 'rework' | 'refinement') {
+    const actionLine =
+      action === 'rework'
+        ? 'The requested review changes are now on the PR branch.'
+        : 'The requested refinement is now on the PR branch.';
+
+    return [
+      '**What you can do next**',
+      actionLine,
+      '1. Review the updated diff in the PR.',
+      '2. If more line-level changes are needed, leave review comments and trigger `ready for rework` again.',
+      '3. If broader polish is needed, comment `ready for refinement <instruction>`.',
+      '4. If everything looks good, merge the PR.',
+    ].join('\n\n');
+  }
+
   private buildImplementationBranchName(issueNumber: number, issueTitle: string) {
     const slug = issueTitle
       .toLowerCase()
@@ -649,8 +677,7 @@ export class BotController {
       return [];
     }
 
-    await git.applyFileSystemChanges(operations);
-    return operations.map((operation) => operation.path);
+    return git.applyMissingFileSystemChanges(operations);
   }
 
   private buildContextArtifactOperations(issueNumber: number, issueTitle: string, spec: string, plan: string) {

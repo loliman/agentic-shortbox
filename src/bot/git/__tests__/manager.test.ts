@@ -8,6 +8,7 @@ jest.mock('fs', () => {
   const actualFs = jest.requireActual('fs');
   return {
     ...actualFs,
+    existsSync: jest.fn(),
     mkdirSync: jest.fn(),
     writeFileSync: jest.fn()
   };
@@ -60,6 +61,23 @@ describe('GitManager', () => {
       expect(fs.writeFileSync).toHaveBeenCalledTimes(2);
       expect(fs.writeFileSync).toHaveBeenCalledWith(expect.stringMatching(/.*[\\\/]src[\\\/]fileA\.ts$/), 'contentA', 'utf8');
       expect(fs.writeFileSync).toHaveBeenCalledWith(expect.stringMatching(/.*[\\\/]fileB\.json$/), 'contentB', 'utf8');
+    });
+  });
+
+  describe('applyMissingFileSystemChanges', () => {
+    it('writes only files that do not already exist', async () => {
+      (fs.existsSync as jest.Mock)
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(true);
+
+      await expect(git.applyMissingFileSystemChanges([
+        { path: 'specs/07-test.md', content: 'spec' },
+        { path: 'plans/07-test-plan.md', content: 'plan' },
+      ])).resolves.toEqual(['specs/07-test.md']);
+
+      expect(fs.mkdirSync).toHaveBeenCalledWith(expect.stringMatching(/.*[\\\/]specs$/), { recursive: true });
+      expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+      expect(fs.writeFileSync).toHaveBeenCalledWith(expect.stringMatching(/.*[\\\/]specs[\\\/]07-test\.md$/), 'spec', 'utf8');
     });
   });
 
