@@ -1,0 +1,30 @@
+name: Agentic Bot
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    # Ignore Bot Activities
+    if: github.event.sender.type != 'Bot'
+
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Self-referencing: this repo IS the action.
+      # External repos replace ./ with christian-riese/agentic-shortbox@v1
+      - name: Run AI Bot
+        uses: ./
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
