@@ -16,14 +16,6 @@ describe("Test the Controller Error Messages", () => {
     mockController = new MockController();
   });
 
-  it("am i really real", () => {
-    const errorMessage = "test error message A";
-
-    expect(() => {
-      mockController.triggerError(errorMessage);
-    }).toThrow(errorMessage);
-  });
-
   it("should throw the correct error message when a different string is provided", () => {
     const errorMessage = "test error message B";
 
@@ -57,5 +49,24 @@ describe("Test the Controller Error Messages", () => {
     expect(() => {
       mockController.triggerError(errorMessage);
     }).toThrow(errorMessage);
+  });
+
+  it("should verify the controller throws unique error messages based on input", () => {
+    const errorMessage = "unique error message for input validation";
+
+    expect(() => {
+      mockController.triggerError(errorMessage);
+    }).toThrow(errorMessage);
+  });
+
+  it("should maintain the integrity of error objects with unexpected input", () => {
+    const errorMessage = "unexpected input edge case";
+
+    try {
+      mockController.triggerError(errorMessage);
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toBe(errorMessage);
+    }
   });
 });
