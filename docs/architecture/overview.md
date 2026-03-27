@@ -10,7 +10,7 @@ The GitHub Action is the stateless edge of the system.
 
 ## 2. Core Workflow Guard
 Pure workflow validation lives in `src/core/`.
-- **Parser**: Recognizes explicit commands such as `ready for specification`, `ready for planning`, `ready for implementation`, and PR feedback via `needs rework:` or `ai: fix`.
+- **Parser**: Recognizes explicit commands such as `ready for specification`, `ready for planning`, `ready for implementation`, and PR rework via `ready for rework`.
 - **Configuration extraction**: Reads `agent:*` and `model:*` labels as configuration only.
 - **State machine**: Validates legal state transitions before expensive work begins.
 

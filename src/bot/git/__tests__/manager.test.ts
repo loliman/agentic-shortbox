@@ -67,19 +67,25 @@ describe('GitManager', () => {
     it('configures git bot and creates branch successfully', async () => {
       execAsyncMock.mockResolvedValueOnce({}); // user.name
       execAsyncMock.mockResolvedValueOnce({}); // user.email
+      execAsyncMock.mockResolvedValueOnce({}); // fetch origin branch
+      execAsyncMock.mockResolvedValueOnce({ stdout: '' }); // ls-remote no branch
       execAsyncMock.mockResolvedValueOnce({}); // checkout -b
 
       await git.checkoutNewBranch('ai-feat-branch');
 
-      expect(execAsyncMock).toHaveBeenCalledTimes(3);
+      expect(execAsyncMock).toHaveBeenCalledTimes(5);
       expect(execAsyncMock).toHaveBeenNthCalledWith(1, 'git config user.name "AI Bot Orchestrator"', expect.any(Object));
       expect(execAsyncMock).toHaveBeenNthCalledWith(2, 'git config user.email "bot@github.actions"', expect.any(Object));
-      expect(execAsyncMock).toHaveBeenNthCalledWith(3, 'git checkout -b ai-feat-branch', expect.any(Object));
+      expect(execAsyncMock).toHaveBeenNthCalledWith(3, 'git fetch origin ai-feat-branch', expect.any(Object));
+      expect(execAsyncMock).toHaveBeenNthCalledWith(4, 'git ls-remote --heads origin ai-feat-branch', expect.any(Object));
+      expect(execAsyncMock).toHaveBeenNthCalledWith(5, 'git checkout -b ai-feat-branch', expect.any(Object));
     });
 
     it('falls back to switching branch if it already exists', async () => {
       execAsyncMock.mockResolvedValueOnce({}); // user.name
       execAsyncMock.mockResolvedValueOnce({}); // user.email
+      execAsyncMock.mockResolvedValueOnce({}); // fetch origin branch
+      execAsyncMock.mockResolvedValueOnce({ stdout: '' }); // ls-remote no branch
       // Mock failure on checkout -b
       execAsyncMock.mockRejectedValueOnce(new Error('fatal: A branch named ai-feat-branch already exists.'));
       execAsyncMock.mockResolvedValueOnce({}); // checkout ai-feat-branch (fallback)
@@ -87,6 +93,21 @@ describe('GitManager', () => {
       await git.checkoutNewBranch('ai-feat-branch');
 
       expect(execAsyncMock).toHaveBeenCalledWith('git checkout ai-feat-branch', expect.any(Object));
+    });
+
+    it('tracks the remote branch when it already exists on origin', async () => {
+      execAsyncMock.mockResolvedValueOnce({}); // user.name
+      execAsyncMock.mockResolvedValueOnce({}); // user.email
+      execAsyncMock.mockResolvedValueOnce({}); // fetch origin branch
+      execAsyncMock.mockResolvedValueOnce({ stdout: 'abc123\trefs/heads/ai-feat-branch\n' }); // ls-remote found
+      execAsyncMock.mockResolvedValueOnce({}); // checkout -B from remote
+
+      await git.checkoutNewBranch('ai-feat-branch');
+
+      expect(execAsyncMock).toHaveBeenCalledWith(
+        'git checkout -B ai-feat-branch origin/ai-feat-branch',
+        expect.any(Object)
+      );
     });
   });
 

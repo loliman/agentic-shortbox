@@ -14,17 +14,9 @@ describe('Command Parser', () => {
     expect(parseCommand('ready for specification')).toEqual({ type: 'define' });
   });
 
-  it('parses "needs rework:" with additional text', () => {
-    expect(parseCommand('needs rework: fix that button please')).toEqual({
-      type: 'rework',
-      additionalText: 'fix that button please',
-    });
-    
-    // Test casing and space resilience
-    expect(parseCommand('  NEEDS reWork:   Make it red   ')).toEqual({
-      type: 'rework',
-      additionalText: 'Make it red',
-    });
+  it('parses "ready for rework"', () => {
+    expect(parseCommand('ready for rework')).toEqual({ type: 'rework' });
+    expect(parseCommand('  READY FOR REWORK  ')).toEqual({ type: 'rework' });
   });
 
   it('ignores conversational text', () => {

@@ -30,7 +30,10 @@ describe('BotController', () => {
         },
         pulls: {
           create: jest.fn().mockResolvedValue({ data: { number: 99 } }),
-          get: jest.fn().mockResolvedValue({ data: { head: { ref: 'existing-branch' } } })
+          get: jest.fn().mockResolvedValue({ data: { head: { ref: 'existing-branch' } } }),
+          listReviewComments: jest.fn().mockResolvedValue({ data: [] }),
+          listReviews: jest.fn().mockResolvedValue({ data: [] }),
+          listFiles: jest.fn().mockResolvedValue({ data: [] }),
         }
       }
     };
@@ -220,22 +223,61 @@ describe('BotController', () => {
        const payload = { number: 7, author: 'eve', body: 'ready for implementation', labels: ['state:planned'], isPR: false };
        await controller.handleCommand(payload);
 
-       expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('codex/issue-7-test-lv5kecpl');
+       expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('codex/issue-7-test-lun2elv9');
        expect(mockGit.applyFileSystemChanges).toHaveBeenCalledWith([{ path: 'foo.ts', content: 'bar' }]);
-       expect(mockGit.commitAndPush).toHaveBeenCalledWith('Fix #7: Auto implementation', 'codex/issue-7-test-lv5kecpl');
+       expect(mockGit.commitAndPush).toHaveBeenCalledWith('Fix #7: Auto implementation', 'codex/issue-7-test-lun2elv9');
 
        expect(mockOctokit.rest.pulls.create).toHaveBeenCalledWith(expect.objectContaining({
           title: 'AI Implementation for #7',
-          head: 'codex/issue-7-test-lv5kecpl',
+          head: 'codex/issue-7-test-lun2elv9',
           base: 'main'
        }));
        expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
           issue_number: 99,
-          body: expect.stringContaining('ai: fix <instruction>')
+          body: expect.stringContaining('ready for rework')
        }));
        expect(mockOctokit.rest.issues.addLabels).toHaveBeenCalledWith(expect.objectContaining({
           labels: ['state:in-review']
        }));
+    });
+
+    it('uses PR review feedback as the rework source', async () => {
+      const mockGit = {
+        checkoutNewBranch: jest.fn(),
+        applyFileSystemChanges: jest.fn(),
+        commitAndPush: jest.fn()
+      };
+      (GitManager as jest.Mock).mockImplementation(() => mockGit);
+      (LLMClient as jest.Mock).mockImplementation(() => ({
+        generateCode: jest.fn().mockResolvedValue([{ path: 'foo.ts', content: 'bar' }])
+      }));
+
+      mockOctokit.rest.pulls.get.mockResolvedValueOnce({ data: { head: { ref: 'existing-branch' } } });
+      mockOctokit.rest.pulls.get.mockResolvedValueOnce({ data: 'diff --git a/foo.ts b/foo.ts' });
+      mockOctokit.rest.pulls.listReviewComments.mockResolvedValueOnce({
+        data: [{ user: { type: 'User' }, path: 'src/foo.ts', line: 12, body: 'Please simplify this message.' }]
+      });
+      mockOctokit.rest.pulls.listReviews.mockResolvedValueOnce({
+        data: [{ user: { type: 'User' }, state: 'CHANGES_REQUESTED', body: 'Please revise the wording.' }]
+      });
+      mockOctokit.rest.pulls.listFiles.mockResolvedValueOnce({
+        data: [{ filename: 'src/foo.ts', patch: '@@ -1 +1 @@' }]
+      });
+      mockOctokit.rest.issues.listComments.mockResolvedValueOnce({
+        data: [{ user: { type: 'User', login: 'bob' }, body: 'ready for rework' }]
+      });
+
+      const payload = { number: 99, author: 'bob', body: 'ready for rework', labels: [], isPR: true };
+      await controller.handleCommand(payload);
+
+      const mockClient = (LLMClient as jest.Mock).mock.results.at(-1)?.value;
+      expect(mockClient.generateCode).toHaveBeenCalledWith(
+        'PR Rework for #99',
+        expect.stringContaining('Apply only the requested review feedback'),
+        expect.stringContaining('src/foo.ts')
+      );
+      expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('existing-branch');
+      expect(mockGit.commitAndPush).toHaveBeenCalledWith('PR Rework: address review feedback', 'existing-branch');
     });
   });
 });

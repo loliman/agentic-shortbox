@@ -51704,24 +51704,25 @@ class BotController {
         }
         let message = '';
         if (availableModels.length === 0) {
-            message = `👋 **Hello! I am your AI Developer Bot.**
-       
-⚠️ **I am currently offline.** No API secrets (\`OPENAI_API_KEY\` or \`GEMINI_API_KEY\`) were found in this repository.
-Please configure the secrets in your GitHub Settings so I can assist you with your issues!`;
+            message = [
+                '👋 **Hello! I am your AI Developer Bot.**',
+                '⚠️ **I am currently offline.** No API secrets (`OPENAI_API_KEY` or `GEMINI_API_KEY`) were found in this repository.',
+                'Please configure the secrets in your GitHub Settings so I can assist you with your issues!',
+            ].join('\n\n');
         }
         else {
-            message = `👋 **Hello! I am your AI Developer Bot.**
-    
-I have detected the following LLM configurations are available for this repository:
-${availableModels.join('\n')}
-
-**How to use me:**
-1. Apply the configuration labels you want to this issue (e.g., \`agent:codex\` and \`model:fast\`).
-2. Type \`ready for planning\` in a comment, and I will draft a technical plan based on your issue description.
-3. Type \`ready for implementation\` to let me write the code and spawn a Pull Request!
-4. Type \`ready for specification\` to let me split this Epic into sub-issues.
-
-I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!`;
+            message = [
+                '👋 **Hello! I am your AI Developer Bot.**',
+                `I have detected the following LLM configurations are available for this repository:\n${availableModels.join('\n')}`,
+                [
+                    '**How to use me:**',
+                    '1. Apply the configuration labels you want to this issue (e.g., `agent:codex` and `model:fast`).',
+                    '2. Type `ready for planning` in a comment, and I will draft a technical plan based on your issue description.',
+                    '3. Type `ready for implementation` to let me write the code and open a Pull Request.',
+                    '4. Type `ready for specification` to let me split this epic into sub-issues.',
+                ].join('\n'),
+                'I strictly follow your repository\'s `AGENTS.md` and `docs/` when responding.',
+            ].join('\n\n');
         }
         await this.octokit.rest.issues.createComment({
             ...this.ctx,
@@ -51731,9 +51732,10 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
     }
     // 2. COMMAND PARSER & GATEWAY
     async handleCommand(payload) {
-        if (payload.isPR && payload.body.trim().startsWith('ai: fix')) {
+        const command = (0, parser_1.parseCommand)(payload.body);
+        if (payload.isPR && command?.type === 'rework') {
             try {
-                return await this.handleReviewFix(payload);
+                return await this.handleReviewRework(payload);
             }
             catch (e) {
                 await this.postStatus(payload.number, this.formatSystemError(e));
@@ -51741,7 +51743,6 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
             }
         }
         // Parse generic action commands
-        const command = (0, parser_1.parseCommand)(payload.body);
         if (!command)
             return core.info('[Bot] No AI command detected in comment.');
         // State Checks (Guard)
@@ -51804,7 +51805,11 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
             });
             links.push(`#${created.data.number} - ${spec.title}`);
         }
-        await this.postStatus(payload.number, `✅ Epic split completed! Here are your generated child tasks:\n\n${links.map(l => `- [ ] ${l}`).join('\n')}`);
+        await this.postStatus(payload.number, [
+            '✅ **Epic split completed.**',
+            'Here are your generated child tasks:',
+            links.map(l => `- [ ] ${l}`).join('\n'),
+        ].join('\n\n'));
     }
     // 4. PLANNING
     async handlePlanning(payload, config, force) {
@@ -51813,11 +51818,11 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
         const agent = new client_1.LLMClient();
         const result = await agent.generateImplementationPlan(issueData.data.title, issueData.data.body, force);
         if (result.action === 'question') {
-            await this.postStatus(payload.number, `**Clarification Needed**\n\n${result.content}`);
+            await this.postStatus(payload.number, ['**Clarification Needed**', result.content].join('\n\n'));
             await this.replaceStateLabel(payload.number, payload.labels, 'state:clarification_needed');
         }
         else {
-            await this.postStatus(payload.number, `**Implementation Plan**\n\n${result.content}`);
+            await this.postStatus(payload.number, ['**Implementation Plan**', result.content].join('\n\n'));
             await this.replaceStateLabel(payload.number, payload.labels, 'state:planned');
         }
     }
@@ -51842,28 +51847,34 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
         const pr = await this.octokit.rest.pulls.create({
             ...this.ctx,
             title: `AI Implementation for #${payload.number}`,
-            body: `This Pull Request implements auto-generated code for Issue #${payload.number}.\n\nReviewer: @${payload.author}\n\nProvide feedback by commenting \`ai: fix [instruction]\` on this PR.`,
+            body: [
+                `This Pull Request implements auto-generated code for Issue #${payload.number}.`,
+                `Reviewer: @${payload.author}`,
+                'Leave review feedback on the PR and then comment `ready for rework` when you want me to apply it.',
+            ].join('\n\n'),
             head: branchName,
             base: 'main'
         });
         await this.postStatus(pr.data.number, this.buildPullRequestWelcomeMessage(payload.number, payload.author));
-        await this.postStatus(payload.number, `✅ Code generated and pushed to PR #${pr.data.number}!\nGo review it!`);
+        await this.postStatus(payload.number, [
+            `✅ **Code generated and pushed to PR #${pr.data.number}.**`,
+            'Go review it!',
+        ].join('\n\n'));
         await this.replaceStateLabel(payload.number, payload.labels, 'state:in-review');
     }
-    // 6. PR REVIEW FIX
-    async handleReviewFix(payload) {
-        const fixInstruction = payload.body.replace('ai: fix', '').trim();
-        await this.postStatus(payload.number, "Addressing your PR review feedback...");
+    // 6. PR REVIEW REWORK
+    async handleReviewRework(payload) {
+        await this.postStatus(payload.number, "Review feedback detected. I am collecting the PR comments, file context, and current diff before applying the requested rework...");
         // Pull Request issues can expose the base ref
         const pr = await this.octokit.rest.pulls.get({ ...this.ctx, pull_number: payload.number });
         const headBranch = pr.data.head.ref;
+        const reworkContext = await this.buildPullRequestReworkContext(payload.number);
         const agent = new client_1.LLMClient();
-        // We should send the PR diff, but for simplicity we send the fix instruction
-        const codeOps = await agent.generateCode('PR Fix', fixInstruction);
+        const codeOps = await agent.generateCode(`PR Rework for #${payload.number}`, 'Apply only the requested review feedback from the PR context. Keep all unrelated code unchanged.', reworkContext);
         const git = new manager_1.GitManager(process.env.GITHUB_TOKEN || '');
         await git.checkoutNewBranch(headBranch); // Checkout existing head
         await git.applyFileSystemChanges(codeOps);
-        await git.commitAndPush(`PR Feedback Fix: ${fixInstruction}`, headBranch);
+        await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
         await this.postStatus(payload.number, `✅ Addressed feedback pushed to ${headBranch}.`);
     }
     // -- Utilities --
@@ -51888,18 +51899,81 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
             return body.startsWith('**Implementation Plan**');
         });
     }
+    async buildPullRequestReworkContext(prNumber) {
+        const [reviewComments, issueComments, reviews, files, diff] = await Promise.all([
+            this.octokit.rest.pulls.listReviewComments({ ...this.ctx, pull_number: prNumber, per_page: 100 }),
+            this.octokit.rest.issues.listComments({ ...this.ctx, issue_number: prNumber, per_page: 100 }),
+            this.octokit.rest.pulls.listReviews({ ...this.ctx, pull_number: prNumber, per_page: 100 }),
+            this.octokit.rest.pulls.listFiles({ ...this.ctx, pull_number: prNumber, per_page: 100 }),
+            this.fetchPullRequestDiff(prNumber),
+        ]);
+        const reviewCommentLines = reviewComments.data
+            .filter((comment) => comment.user?.type !== 'Bot')
+            .map((comment) => {
+            const path = comment.path ? `file=${comment.path}` : 'file=unknown';
+            const line = comment.line ? ` line=${comment.line}` : '';
+            const body = typeof comment.body === 'string' ? comment.body.trim() : '';
+            return `- ${path}${line}: ${body}`;
+        });
+        const reviewSummaryLines = reviews.data
+            .filter((review) => review.user?.type !== 'Bot' && typeof review.body === 'string' && review.body.trim())
+            .map((review) => `- state=${review.state}: ${review.body.trim()}`);
+        const discussionLines = issueComments.data
+            .filter((comment) => comment.user?.type !== 'Bot')
+            .filter((comment) => {
+            const body = typeof comment.body === 'string' ? comment.body.trim().toLowerCase() : '';
+            return body && body !== 'ready for rework';
+        })
+            .map((comment) => `- @${comment.user?.login || 'unknown'}: ${String(comment.body || '').trim()}`);
+        const changedFiles = files.data.map((file) => {
+            const patch = typeof file.patch === 'string' ? file.patch : '';
+            return `- ${file.filename}\n${patch}`;
+        });
+        if (reviewCommentLines.length === 0 &&
+            reviewSummaryLines.length === 0 &&
+            discussionLines.length === 0) {
+            throw new Error('No PR feedback was found. Leave review comments or PR discussion feedback first, then comment `ready for rework`.');
+        }
+        return [
+            '=== PR REVIEW FEEDBACK ===',
+            reviewCommentLines.length ? reviewCommentLines.join('\n') : 'No inline review comments found.',
+            '',
+            '=== PR REVIEW SUMMARIES ===',
+            reviewSummaryLines.length ? reviewSummaryLines.join('\n') : 'No review summaries found.',
+            '',
+            '=== PR DISCUSSION COMMENTS ===',
+            discussionLines.length ? discussionLines.join('\n') : 'No PR discussion comments found.',
+            '',
+            '=== CHANGED FILES ===',
+            changedFiles.length ? changedFiles.join('\n\n') : 'No changed files reported.',
+            '',
+            '=== PR DIFF ===',
+            diff || 'No diff available.',
+        ].join('\n');
+    }
+    async fetchPullRequestDiff(prNumber) {
+        const response = await this.octokit.rest.pulls.get({
+            ...this.ctx,
+            pull_number: prNumber,
+            mediaType: {
+                format: 'diff'
+            }
+        });
+        return response.data;
+    }
     buildPullRequestWelcomeMessage(issueNumber, author) {
-        return `👋 **AI Review Helper**
-
-This Pull Request was created for Issue #${issueNumber}.
-
-**Available action here:**
-- Comment \`ai: fix <instruction>\` to ask me for a targeted follow-up change on this PR.
-
-**Example:**
-\`ai: fix make the bot messages more consistent and shorten the error text\`
-
-Reviewer: @${author}`;
+        return [
+            '👋 **AI Review Helper**',
+            `This Pull Request was created for Issue #${issueNumber}.`,
+            [
+                '**Review flow here:**',
+                '1. Leave inline review comments or submit a full review on the PR.',
+                '2. Comment `ready for rework` on the PR when the feedback set is complete.',
+                '3. I will collect the review feedback, changed files, and diff, then apply only that rework.',
+            ].join('\n'),
+            ['**Example:**', '`ready for rework`'].join('\n'),
+            `Reviewer: @${author}`,
+        ].join('\n\n');
     }
     buildImplementationBranchName(issueNumber, issueTitle) {
         const slug = issueTitle
@@ -52004,6 +52078,12 @@ class GitManager {
         // We are inside github actions. Configure git natively
         await execAsync(`git config user.name "AI Bot Orchestrator"`, { cwd: this.workspace });
         await execAsync(`git config user.email "bot@github.actions"`, { cwd: this.workspace });
+        await execAsync(`git fetch origin ${branchName}`, { cwd: this.workspace }).catch(() => undefined);
+        const remoteBranchExists = await execAsync(`git ls-remote --heads origin ${branchName}`, { cwd: this.workspace });
+        if (remoteBranchExists.stdout.trim()) {
+            await execAsync(`git checkout -B ${branchName} origin/${branchName}`, { cwd: this.workspace });
+            return;
+        }
         // Ensure we are working on a fresh branch based off existing checkout
         try {
             await execAsync(`git checkout -b ${branchName}`, { cwd: this.workspace });
@@ -52141,9 +52221,9 @@ class LLMClient {
         const prompt = `\n\n${sys}\n\n=== TASK: IMPLEMENTATION PLANNING ===\nYou are an Architect creating an implementation plan.\nIssue Title: ${title}\nIssue Body: ${body}\n\nINSTRUCTION: ${instruction}\n\nReturn EXACTLY a JSON object mapping to: { action: 'plan' | 'question', content: string }.`;
         return this.askJSON(prompt);
     }
-    async generateCode(title, body) {
+    async generateCode(title, body, currentCodeContext) {
         const sys = this.gatherSystemContext();
-        const prompt = `${sys}\n\n${(0, prompts_1.generateCodePrompt)(title, body)}`;
+        const prompt = `${sys}\n\n${(0, prompts_1.generateCodePrompt)(title, body, currentCodeContext)}`;
         return this.askJSON(prompt);
     }
     async ask(prompt, agentConf = 'openai', modelConf = 'strong') {
@@ -52372,9 +52452,8 @@ function parseCommand(text) {
     if (normalized === 'ready for implementation') {
         return { type: 'implement' };
     }
-    if (normalized.startsWith('needs rework:')) {
-        const additionalText = text.substring(text.toLowerCase().indexOf('needs rework:') + 13).trim();
-        return { type: 'rework', additionalText };
+    if (normalized === 'ready for rework') {
+        return { type: 'rework' };
     }
     return null; // Ignore completely if no command is detected
 }

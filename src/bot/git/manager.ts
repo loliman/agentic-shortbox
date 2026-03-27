@@ -36,6 +36,13 @@ export class GitManager {
     // We are inside github actions. Configure git natively
     await execAsync(`git config user.name "AI Bot Orchestrator"`, { cwd: this.workspace });
     await execAsync(`git config user.email "bot@github.actions"`, { cwd: this.workspace });
+    await execAsync(`git fetch origin ${branchName}`, { cwd: this.workspace }).catch(() => undefined);
+
+    const remoteBranchExists = await execAsync(`git ls-remote --heads origin ${branchName}`, { cwd: this.workspace });
+    if (remoteBranchExists.stdout.trim()) {
+      await execAsync(`git checkout -B ${branchName} origin/${branchName}`, { cwd: this.workspace });
+      return;
+    }
 
     // Ensure we are working on a fresh branch based off existing checkout
     try {

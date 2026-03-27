@@ -21,7 +21,7 @@ This forms the stateful execution core of the GitHub-native bot architecture.
 ## User Scenarios
 1. **Given** a `ready for planning` command on an issue, **When** planning starts, **Then** the bot comments progress, generates a plan, and updates the state label to either `state:planned` or `state:clarification_needed`.
 2. **Given** a `ready for implementation` command on a planned issue, **When** code generation completes, **Then** the bot creates a branch, commits and pushes generated changes, opens a PR, and moves the issue to `state:in-review`.
-3. **Given** an `ai: fix ...` comment on a PR, **When** the bot applies the requested follow-up, **Then** it commits to the existing PR head branch and comments success.
+3. **Given** review feedback exists on a PR and a human comments `ready for rework` on the PR, **When** the bot applies the requested follow-up, **Then** it commits to the existing PR head branch and comments success.
 
 ## Affected Areas
 - `src/bot/controller.ts`
