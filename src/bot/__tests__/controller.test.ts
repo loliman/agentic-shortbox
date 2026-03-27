@@ -7,7 +7,14 @@ import fs from 'fs';
 jest.mock('../llm/client');
 jest.mock('../git/manager');
 jest.mock('@actions/core');
-jest.mock('fs');
+jest.mock('fs', () => {
+  const actualFs = jest.requireActual('fs');
+  return {
+    ...actualFs,
+    existsSync: jest.fn(actualFs.existsSync),
+    readFileSync: jest.fn(actualFs.readFileSync),
+  };
+});
 
 describe('BotController', () => {
   let mockOctokit: any;
