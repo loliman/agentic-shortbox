@@ -9,7 +9,7 @@ Currently the welcome message is hardcoded in `src/bot/controller.ts`. Repositor
 ## Scope
 - **In Scope:**
   - Reading a `bot.config.yml` file from the root of the consumer repository at runtime.
-  - Supporting a `welcome.header` and `welcome.footer` field that prepend/append to the auto-generated LLM listing.
+  - Supporting a `welcome.header` and `welcome.footer` field that prepend/append to the auto-generated Codex workflow guidance.
   - Graceful fallback to the current hardcoded message if no config file is present.
 - **Out of Scope (Non-Goals):**
   - Full templating engines or variable interpolation inside the message.
@@ -20,7 +20,7 @@ Currently the welcome message is hardcoded in `src/bot/controller.ts`. Repositor
 The welcome routine lives entirely in `src/bot/controller.ts` → `handleWelcome()`. It is a pure GitHub API side-effect (posting a comment) with no state-machine dependency. This feature touches only the `src/bot/` layer and adds a new lightweight config-reading utility.
 
 ## User Scenarios
-1. **Given** a repo with a `bot.config.yml` containing a custom `welcome.header`, **When** an Issue is opened, **Then** the bot posts the custom header above the auto-generated LLM listing.
+1. **Given** a repo with a `bot.config.yml` containing a custom `welcome.header`, **When** an Issue is opened, **Then** the bot posts the custom header above the auto-generated Codex workflow guidance.
 2. **Given** a repo with a `bot.config.yml` containing a custom `welcome.footer`, **When** an Issue is opened, **Then** the bot appends the custom footer below the how-to-use instructions.
 3. **Given** a repo with **no** `bot.config.yml`, **When** an Issue is opened, **Then** the bot behaves exactly as today — no errors, no regression.
 4. **Given** a `bot.config.yml` with missing or empty fields, **When** an Issue is opened, **Then** only the present fields are applied; absent fields fall back to defaults silently.
@@ -45,9 +45,7 @@ welcome:
 ```
 [welcome.header — if set]
 
-I have detected the following LLM configurations...
-- OpenAI: ...
-- Gemini: ...
+This repository is configured to run Codex through OpenAI...
 
 **How to use me:**
 1. Apply labels...

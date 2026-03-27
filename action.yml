@@ -1,5 +1,5 @@
 name: 'Agentic Shortbox — AI Developer Bot'
-description: 'A GitHub-native AI bot that plans, implements, and reviews code via Issue comments. Powered by OpenAI or Google Gemini.'
+description: 'A GitHub-native AI bot that plans, implements, and reviews code via Issue comments using OpenAI Codex.'
 author: 'christian-riese'
 
 branding:
@@ -8,11 +8,7 @@ branding:
 
 inputs:
   openai-api-key:
-    description: 'OpenAI API Key. Enables the agent:codex model. If omitted, OpenAI will be unavailable.'
-    required: false
-    default: ''
-  gemini-api-key:
-    description: 'Google Gemini API Key. Enables the agent:gemini model. If omitted, Gemini will be unavailable.'
+    description: 'OpenAI API Key for running Codex. If omitted, the action will stay offline.'
     required: false
     default: ''
 

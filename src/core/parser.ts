@@ -1,6 +1,7 @@
 export interface ParsedCommand {
   type: 'define' | 'plan' | 'implement' | 'rework' | 'refinement';
   additionalText?: string;
+  force?: boolean;
 }
 
 export interface AgentConfiguration {
@@ -19,8 +20,12 @@ export function parseCommand(text: string): ParsedCommand | null {
     return { type: 'define' };
   }
 
-  if (normalized.startsWith('ready for planning')) {
-    return { type: 'plan' };
+  if (normalized === 'ready for planning') {
+    return { type: 'plan', force: false };
+  }
+
+  if (normalized === 'ready for planning without questions') {
+    return { type: 'plan', force: true };
   }
 
   if (normalized === 'ready for implementation') {
@@ -39,6 +44,40 @@ export function parseCommand(text: string): ParsedCommand | null {
   return null; // Ignore completely if no command is detected
 }
 
+export function suggestCommand(text: string): string | null {
+  const normalized = text.trim().toLowerCase();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === 'ready for planning!') {
+    return 'Use `ready for planning without questions` if you want to skip clarification.';
+  }
+
+  if (normalized.includes('ready to plan') || normalized.includes('ready to planning')) {
+    return 'Did you mean `ready for planning`?';
+  }
+
+  if (normalized.includes('ready to implement') || normalized.includes('ready for implement')) {
+    return 'Did you mean `ready for implementation`?';
+  }
+
+  if (normalized.includes('ready to define') || normalized.includes('ready for define')) {
+    return 'Did you mean `ready for specification`?';
+  }
+
+  if (normalized.startsWith('ready for refinement') && normalized === 'ready for refinement') {
+    return 'Add the instruction in the same comment, for example `ready for refinement make the bot tone warmer`.';
+  }
+
+  if (normalized.startsWith('ready')) {
+    return 'Unknown command. Supported commands are `ready for specification`, `ready for planning`, `ready for planning without questions`, `ready for implementation`, `ready for rework`, and `ready for refinement <instruction>`.';
+  }
+
+  return null;
+}
+
 /**
  * Extracts configuration state from GitHub labels arrays.
  * Format is `agent:name` and `model:tier`. Returns defaults if none defined.
@@ -54,6 +93,9 @@ export function parseConfiguration(labels: string[]): AgentConfiguration {
         throw new Error('Conflicting agent labels found. Only one agent label is allowed.');
       }
       agentMatch = label.split(':')[1];
+      if (agentMatch !== 'codex') {
+        throw new Error('Only `agent:codex` is supported in this repository.');
+      }
     }
 
     if (label.startsWith('model:')) {
@@ -65,7 +107,7 @@ export function parseConfiguration(labels: string[]): AgentConfiguration {
   }
 
   return {
-    agent: agentMatch || 'default-agent',
-    model: modelMatch || 'default-model',
+    agent: agentMatch || 'codex',
+    model: modelMatch || 'strong',
   };
 }

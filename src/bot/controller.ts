@@ -1,9 +1,7 @@
 import * as core from '@actions/core';
-import fs from 'fs';
-import path from 'path';
-import { LLMClient } from './llm/client';
+import { CodexRunner } from './codex/runner';
 import { GitManager } from './git/manager';
-import { parseCommand, parseConfiguration } from '../core/parser';
+import { parseCommand, parseConfiguration, suggestCommand } from '../core/parser';
 import { extractCurrentState, evaluateTransition, IllegalTransitionError } from '../core/state-machine';
 
 class MissingPlanError extends Error {
@@ -51,38 +49,25 @@ export class BotController {
   // 1. WELCOME
   async handleWelcome(issueNumber: number) {
     core.info(`[Bot] Posting Welcome Message on Issue #${issueNumber}`);
-    
-    // Determine available models dynamically from Secrets
-    const availableModels = [];
-    if (process.env.OPENAI_API_KEY) {
-       availableModels.push('- **OpenAI**: Use label `agent:codex` combined with `model:fast` or `model:strong`');
-    }
-    if (process.env.GEMINI_API_KEY) {
-       availableModels.push('- **Google Gemini**: Use label `agent:gemini` combined with `model:fast` or `model:strong`');
-    }
-    
-    let message = '';
-
-    if (availableModels.length === 0) {
-       message = [
-         '👋 **Hello! I am your AI Developer Bot.**',
-         '⚠️ **I am currently offline.** No API secrets (`OPENAI_API_KEY` or `GEMINI_API_KEY`) were found in this repository.',
-         'Please configure the secrets in your GitHub Settings so I can assist you with your issues!',
-       ].join('\n\n');
-    } else {
-       message = [
-         '👋 **Hello! I am your AI Developer Bot.**',
-         `I have detected the following LLM configurations are available for this repository:\n${availableModels.join('\n')}`,
-         [
-           '**How to use me:**',
-           '1. Apply the configuration labels you want to this issue (e.g., `agent:codex` and `model:fast`).',
-           '2. Type `ready for planning` in a comment, and I will draft a technical plan based on your issue description.',
-           '3. Type `ready for implementation` to let me write the code and open a Pull Request.',
-           '4. Type `ready for specification` to let me split this epic into sub-issues.',
-         ].join('\n'),
-         'I strictly follow your repository\'s `AGENTS.md` and `docs/` when responding.',
-       ].join('\n\n');
-    }
+    const message = process.env.OPENAI_API_KEY
+      ? [
+          '👋 **Hello! I am your AI Developer Bot.**',
+          'This repository is configured to run **Codex** through OpenAI.',
+          [
+            '**How to use me:**',
+            '1. Optionally apply `model:fast` or `model:strong` to this issue.',
+            '2. Type `ready for planning` in a comment to generate an implementation plan.',
+            '3. Type `ready for planning without questions` if you want a forced plan with no clarification step.',
+            '4. Type `ready for implementation` to let Codex work in the checked-out repository and open a Pull Request.',
+            '5. Type `ready for specification` to let Codex split this epic into child specs.',
+          ].join('\n'),
+          'For every command, Codex is instructed to inspect and obey `AGENTS.md`, `docs/`, `plans/`, and `specs/` from the repository itself.',
+        ].join('\n\n')
+      : [
+          '👋 **Hello! I am your AI Developer Bot.**',
+          '⚠️ **I am currently offline.** No `OPENAI_API_KEY` was found in this repository.',
+          'Please configure the secret in GitHub so I can run Codex for your workflow commands.',
+        ].join('\n\n');
 
     await this.octokit.rest.issues.createComment({
       ...this.ctx,
@@ -94,10 +79,11 @@ export class BotController {
   // 2. COMMAND PARSER & GATEWAY
   async handleCommand(payload: { number: number; author: string; body: string; labels: string[], isPR: boolean }) {
     const command = parseCommand(payload.body);
+    const config = parseConfiguration(payload.labels);
 
     if (payload.isPR && command?.type === 'rework') {
       try {
-        return await this.handleReviewRework(payload);
+        return await this.handleReviewRework(payload, config);
       } catch(e: any) {
         await this.postStatus(payload.number, this.formatSystemError(e));
         throw e;
@@ -106,7 +92,7 @@ export class BotController {
 
     if (payload.isPR && command?.type === 'refinement') {
       try {
-        return await this.handleReviewRefinement(payload, command.additionalText || '');
+        return await this.handleReviewRefinement(payload, command.additionalText || '', config);
       } catch(e: any) {
         await this.postStatus(payload.number, this.formatSystemError(e));
         throw e;
@@ -114,7 +100,21 @@ export class BotController {
     }
     
     // Parse generic action commands
-    if (!command) return core.info('[Bot] No AI command detected in comment.');
+    if (!command) {
+      const suggestion = suggestCommand(payload.body);
+      if (suggestion) {
+        await this.postStatus(
+          payload.number,
+          [
+            '🤖 **Command Help**',
+            suggestion,
+          ].join('\n\n')
+        );
+      } else {
+        core.info('[Bot] No AI command detected in comment.');
+      }
+      return;
+    }
     
     // State Checks (Guard)
     const currentState = extractCurrentState(payload.labels);
@@ -129,8 +129,6 @@ export class BotController {
       throw err;
     }
 
-    const config = parseConfiguration(payload.labels);
-    
     core.info(`[Bot] Command ${command.type.toUpperCase()} intercepted from @${payload.author}`);
 
     if (command.type === 'define') {
@@ -141,7 +139,7 @@ export class BotController {
         throw e;
       }
     } else if (command.type === 'plan') {
-      const force = payload.body.includes('ready for planning!');
+      const force = command.force === true;
       try {
         await this.handlePlanning(payload, config, force);
       } catch(e: any) {
@@ -160,11 +158,17 @@ export class BotController {
 
   // 3. SPECIFICATION (Epic Splitting)
   async handleSpecification(payload: any, config: any) {
-    await this.postStatus(payload.number, "Let me read the specifications and split this epic for you...");
+    await this.postStatus(
+      payload.number,
+      [
+        '🤖 **Specification started**',
+        'I am reviewing the current feature description and splitting it into child specs that follow the repository templates.',
+      ].join('\n\n')
+    );
     const issueData = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: payload.number });
     
-    const agent = new LLMClient();
-    const tasks = await agent.generateEpicSplit(issueData.data.title, issueData.data.body);
+    const agent = new CodexRunner();
+    const tasks = await agent.generateEpicSplit(issueData.data.title, issueData.data.body, config.model);
     
     // Create sub issues 
     const links = [];
@@ -189,11 +193,19 @@ export class BotController {
 
   // 4. PLANNING
   async handlePlanning(payload: any, config: any, force: boolean) {
-    await this.postStatus(payload.number, "Drafting the implementation plan...");
+    await this.postStatus(
+      payload.number,
+      [
+        '🤖 **Planning started**',
+        force
+          ? 'I am generating a full implementation plan without asking clarifying questions first.'
+          : 'I am reviewing the feature spec and deciding whether I can produce a full implementation plan or need clarification.',
+      ].join('\n\n')
+    );
     const issueData = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: payload.number });
     
-    const agent = new LLMClient();
-    const result = await agent.generateImplementationPlan(issueData.data.title, issueData.data.body, force);
+    const agent = new CodexRunner();
+    const result = await agent.generateImplementationPlan(issueData.data.title, issueData.data.body, force, config.model);
 
     if (result.action === 'question') {
       await this.postStatus(payload.number, ['**Clarification Needed**', result.content].join('\n\n'));
@@ -211,20 +223,30 @@ export class BotController {
       throw new MissingPlanError();
     }
 
-    await this.postStatus(payload.number, "Executing local implementation...");
+    await this.postStatus(
+      payload.number,
+      [
+        '🤖 **Implementation started**',
+        'I am handing the feature spec and latest implementation plan to Codex.',
+        'Codex will inspect the repository directly, make the implementation locally, and I will open a PR with the result.',
+      ].join('\n\n')
+    );
     
     const issueData = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: payload.number });
-    const agent = new LLMClient();
-    
-    // For Implementation, we read the entire code via the Native Workspace FileSystem
-    const codeOperations = await agent.generateCode(issueData.data.title, issueData.data.body);
+    const plan = await this.getLatestImplementationPlan(payload.number);
+    const agent = new CodexRunner();
     
     const git = new GitManager(process.env.GITHUB_TOKEN || '');
     const branchName = this.buildImplementationBranchName(payload.number, issueData.data.title || '');
     
     // Git checkouts locally
     await git.checkoutNewBranch(branchName);
-    await git.applyFileSystemChanges(codeOperations);
+    const implementationResult = await agent.implementFeature(
+      issueData.data.title || '',
+      issueData.data.body || '',
+      plan,
+      config.model
+    );
     await git.commitAndPush(`Fix #${payload.number}: Auto implementation`, branchName);
 
     // Create PR via Octokit
@@ -245,6 +267,7 @@ export class BotController {
       payload.number,
       [
         `✅ **Code generated and pushed to PR #${pr.data.number}.**`,
+        implementationResult.summary,
         'Go review it!',
       ].join('\n\n')
     );
@@ -252,8 +275,15 @@ export class BotController {
   }
 
   // 6. PR REVIEW REWORK
-  async handleReviewRework(payload: any) {
-     await this.postStatus(payload.number, "Review feedback detected. I am collecting the PR comments, file context, and current diff before applying the requested rework...");
+  async handleReviewRework(payload: any, config: any) {
+     await this.postStatus(
+       payload.number,
+       [
+         '🤖 **Rework started**',
+         'I am handing the linked feature spec, latest implementation plan, and all open review feedback to Codex.',
+         'Only unresolved review feedback will be addressed.',
+       ].join('\n\n')
+     );
      
      // Pull Request issues can expose the base ref
      const pr = await this.octokit.rest.pulls.get({ ...this.ctx, pull_number: payload.number });
@@ -261,45 +291,55 @@ export class BotController {
      
      const git = new GitManager(process.env.GITHUB_TOKEN || '');
      await git.checkoutNewBranch(headBranch); // Checkout existing head
-     const reworkContext = await this.buildPullRequestReworkContext(payload.number);
-     
-     const agent = new LLMClient();
-     const codeOps = await agent.generateCode(
-       `PR Rework for #${payload.number}`,
-       'Apply only the requested review feedback from the PR context. Prefer the exact files and lines referenced in the review feedback. Keep all unrelated code unchanged.',
-       reworkContext
+     const [featureContext, reviewFeedback] = await Promise.all([
+       this.getPullRequestFeatureContext(payload.number),
+       this.buildPullRequestReworkInstruction(payload.number),
+     ]);
+
+     const agent = new CodexRunner();
+     const result = await agent.applyReviewRework(
+       featureContext.title,
+       featureContext.spec,
+       featureContext.plan,
+       reviewFeedback,
+       config.model
      );
-     await git.applyFileSystemChanges(codeOps);
      await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
-     await this.postStatus(payload.number, this.buildReworkSummaryComment(codeOps, reworkContext));
+     await this.postStatus(payload.number, this.buildEditSummaryComment('🛠️ **Rework applied**', result.summary, result.changedFiles));
      
      await this.postStatus(payload.number, `✅ Addressed feedback pushed to ${headBranch}.`);
   }
 
-  async handleReviewRefinement(payload: any, refinementInstruction: string) {
+  async handleReviewRefinement(payload: any, refinementInstruction: string, config: any) {
      if (!refinementInstruction.trim()) {
       throw new Error('`ready for refinement` requires an instruction in the same comment. Put your refinement request after the command.');
      }
 
-     await this.postStatus(payload.number, 'General refinement request detected. I am collecting the current PR context before applying the requested improvements...');
+     await this.postStatus(
+       payload.number,
+       [
+         '🤖 **Refinement started**',
+         'I am handing the linked feature spec, latest implementation plan, and your refinement instruction to Codex.',
+         'Codex will apply broader polish without changing unrelated behavior.',
+       ].join('\n\n')
+     );
 
      const pr = await this.octokit.rest.pulls.get({ ...this.ctx, pull_number: payload.number });
      const headBranch = pr.data.head.ref;
 
      const git = new GitManager(process.env.GITHUB_TOKEN || '');
      await git.checkoutNewBranch(headBranch);
-     const refinementContext = await this.buildPullRequestRefinementContext(payload.number, refinementInstruction);
-
-     const agent = new LLMClient();
-     const codeOps = await agent.generateCode(
-       `PR Refinement for #${payload.number}`,
-       `Apply this general refinement request exactly: ${refinementInstruction}`,
-       refinementContext
+     const featureContext = await this.getPullRequestFeatureContext(payload.number);
+     const agent = new CodexRunner();
+     const result = await agent.applyReviewRefinement(
+       featureContext.title,
+       featureContext.spec,
+       featureContext.plan,
+       refinementInstruction,
+       config.model
      );
-
-     await git.applyFileSystemChanges(codeOps);
      await git.commitAndPush('PR Refinement: apply requested polish', headBranch);
-     await this.postStatus(payload.number, this.buildRefinementSummaryComment(codeOps, refinementInstruction));
+     await this.postStatus(payload.number, this.buildEditSummaryComment('✨ **Refinement applied**', result.summary, result.changedFiles, refinementInstruction));
      await this.postStatus(payload.number, `✅ Refinement updates pushed to ${headBranch}.`);
   }
   
@@ -329,179 +369,36 @@ export class BotController {
     });
   }
 
-  private async buildPullRequestReworkContext(prNumber: number) {
-    const [openReviewThreads, issueComments, files, diff] = await Promise.all([
-      this.fetchOpenReviewThreads(prNumber),
-      this.octokit.rest.issues.listComments({ ...this.ctx, issue_number: prNumber, per_page: 100 }),
-      this.octokit.rest.pulls.listFiles({ ...this.ctx, pull_number: prNumber, per_page: 100 }),
-      this.fetchPullRequestDiff(prNumber),
-    ]);
-
-    const reviewCommentLines = openReviewThreads.map((thread) => {
-        const path = thread.path ? `file=${thread.path}` : 'file=unknown';
-        const line = thread.line ? ` line=${thread.line}` : '';
-        const hunk = typeof thread.diffHunk === 'string' && thread.diffHunk.trim()
-          ? `\n  hunk:\n${thread.diffHunk}`
-          : '';
-        const body = typeof thread.body === 'string' ? thread.body.trim() : '';
-        return `- ${path}${line}: ${body}${hunk}`;
-      });
-
-    const discussionLines = issueComments.data
-      .filter((comment: any) => comment.user?.type !== 'Bot')
-      .filter((comment: any) => {
-        const body = typeof comment.body === 'string' ? comment.body.trim().toLowerCase() : '';
-        return body && body !== 'ready for rework';
-      })
-      .map((comment: any) => `- @${comment.user?.login || 'unknown'}: ${String(comment.body || '').trim()}`);
-
-    const changedFiles = files.data.map((file: any) => {
-      const patch = typeof file.patch === 'string' ? file.patch : '';
-      return `- ${file.filename}\n${patch}`;
-    });
-
-    const referencedPaths = new Set<string>();
-    for (const thread of openReviewThreads) {
-      if (typeof thread.path === 'string' && thread.path) {
-        referencedPaths.add(thread.path);
-      }
-    }
-    for (const file of files.data) {
-      if (typeof file.filename === 'string' && file.filename) {
-        referencedPaths.add(file.filename);
-      }
-    }
-
-    const workspaceFiles = Array.from(referencedPaths)
-      .map((filePath) => this.readWorkspaceFileForReview(filePath))
-      .filter((entry): entry is string => Boolean(entry));
-
-    if (
-      reviewCommentLines.length === 0 &&
-      discussionLines.length === 0
-    ) {
-      throw new Error('No open PR feedback was found. Leave unresolved review feedback or PR discussion feedback first, then trigger `ready for rework`.');
-    }
-
-    return [
-      '=== OPEN PR REVIEW FEEDBACK ===',
-      reviewCommentLines.length ? reviewCommentLines.join('\n') : 'No open inline review comments found.',
-      '',
-      '=== PR DISCUSSION COMMENTS ===',
-      discussionLines.length ? discussionLines.join('\n') : 'No PR discussion comments found.',
-      '',
-      '=== CHANGED FILES ===',
-      changedFiles.length ? changedFiles.join('\n\n') : 'No changed files reported.',
-      '',
-      '=== CURRENT FILE CONTENTS ===',
-      workspaceFiles.length ? workspaceFiles.join('\n\n') : 'No local file content available.',
-      '',
-      '=== PR DIFF ===',
-      diff || 'No diff available.',
-    ].join('\n');
-  }
-
-  private async buildPullRequestRefinementContext(prNumber: number, refinementInstruction: string) {
-    const [openReviewThreads, issueComments, files, diff] = await Promise.all([
-      this.fetchOpenReviewThreads(prNumber),
-      this.octokit.rest.issues.listComments({ ...this.ctx, issue_number: prNumber, per_page: 100 }),
-      this.octokit.rest.pulls.listFiles({ ...this.ctx, pull_number: prNumber, per_page: 100 }),
-      this.fetchPullRequestDiff(prNumber),
-    ]);
-
+  private async buildPullRequestReworkInstruction(prNumber: number) {
+    const openReviewThreads = await this.fetchOpenReviewThreads(prNumber);
     const reviewCommentLines = openReviewThreads.map((thread) => {
       const path = thread.path ? `file=${thread.path}` : 'file=unknown';
       const line = thread.line ? ` line=${thread.line}` : '';
-      return `- ${path}${line}: ${thread.body}`;
+      const body = typeof thread.body === 'string' ? thread.body.trim() : '';
+      return `- ${path}${line}: ${body}`;
     });
 
-    const discussionLines = issueComments.data
-      .filter((comment: any) => comment.user?.type !== 'Bot')
-      .filter((comment: any) => {
-        const body = typeof comment.body === 'string' ? comment.body.trim().toLowerCase() : '';
-        return body && !body.startsWith('ready for rework') && !body.startsWith('ready for refinement');
-      })
-      .map((comment: any) => `- @${comment.user?.login || 'unknown'}: ${String(comment.body || '').trim()}`);
-
-    const referencedPaths = new Set<string>();
-    for (const thread of openReviewThreads) {
-      if (thread.path) referencedPaths.add(thread.path);
-    }
-    for (const file of files.data) {
-      if (typeof file.filename === 'string' && file.filename) {
-        referencedPaths.add(file.filename);
-      }
+    if (reviewCommentLines.length === 0) {
+      throw new Error('No open PR feedback was found. Leave unresolved review feedback first, then trigger `ready for rework`.');
     }
 
-    const workspaceFiles = Array.from(referencedPaths)
-      .map((filePath) => this.readWorkspaceFileForReview(filePath))
-      .filter((entry): entry is string => Boolean(entry));
-
-    return [
-      '=== REFINEMENT INSTRUCTION ===',
-      refinementInstruction,
-      '',
-      '=== OPEN REVIEW FEEDBACK ===',
-      reviewCommentLines.length ? reviewCommentLines.join('\n') : 'No open inline review comments found.',
-      '',
-      '=== GENERAL PR DISCUSSION ===',
-      discussionLines.length ? discussionLines.join('\n') : 'No general PR discussion comments found.',
-      '',
-      '=== CURRENT FILE CONTENTS ===',
-      workspaceFiles.length ? workspaceFiles.join('\n\n') : 'No local file content available.',
-      '',
-      '=== PR DIFF ===',
-      diff || 'No diff available.',
-    ].join('\n');
+    return reviewCommentLines.join('\n');
   }
 
-  private buildReworkSummaryComment(
-    codeOps: { path: string, content: string }[],
-    reworkContext: string
+  private buildEditSummaryComment(
+    heading: string,
+    summary: string,
+    changedFiles: string[],
+    instruction?: string
   ) {
-    const processedFeedback = this.extractProcessedFeedback(reworkContext);
-    const changedFiles = codeOps.map((op) => `- \`${op.path}\``);
-
     return [
-      '🛠️ **Rework applied**',
-      processedFeedback.length
-        ? ['**Processed feedback:**', processedFeedback.join('\n')].join('\n')
-        : '**Processed feedback:**\n- Review context was collected and applied.',
+      heading,
+      instruction ? ['**Instruction:**', instruction].join('\n') : null,
+      ['**Summary:**', summary].join('\n'),
       changedFiles.length
-        ? ['**Updated files:**', changedFiles.join('\n')].join('\n')
-        : '**Updated files:**\n- No file list available.',
-    ].join('\n\n');
-  }
-
-  private buildRefinementSummaryComment(
-    codeOps: { path: string, content: string }[],
-    refinementInstruction: string
-  ) {
-    const changedFiles = codeOps.map((op) => `- \`${op.path}\``);
-
-    return [
-      '✨ **Refinement applied**',
-      ['**Instruction:**', refinementInstruction].join('\n'),
-      changedFiles.length
-        ? ['**Updated files:**', changedFiles.join('\n')].join('\n')
-        : '**Updated files:**\n- No file list available.',
-    ].join('\n\n');
-  }
-
-  private extractProcessedFeedback(reworkContext: string) {
-    const feedbackSection = reworkContext
-      .split('=== OPEN PR REVIEW FEEDBACK ===\n')[1]
-      ?.split('\n\n=== PR DISCUSSION COMMENTS ===')[0]
-      ?.trim();
-
-    if (!feedbackSection || feedbackSection === 'No open inline review comments found.') {
-      return [];
-    }
-
-    return feedbackSection
-      .split('\n')
-      .filter((line) => line.startsWith('- '))
-      .slice(0, 6);
+        ? ['**Updated files:**', changedFiles.map((filePath) => `- \`${filePath}\``).join('\n')].join('\n')
+        : '**Updated files:**\n- Codex did not report any changed files.',
+    ].filter((section): section is string => Boolean(section)).join('\n\n');
   }
 
   private async fetchOpenReviewThreads(prNumber: number) {
@@ -565,31 +462,18 @@ export class BotController {
       .filter((thread): thread is OpenReviewThread => thread !== null);
   }
 
-  private readWorkspaceFileForReview(filePath: string) {
-    const fullPath = path.resolve(process.cwd(), filePath);
-    if (!fs.existsSync(fullPath)) {
-      return '';
-    }
-
-    const content = fs.readFileSync(fullPath, 'utf8');
-    const numbered = content
-      .split('\n')
-      .map((line, index) => `${index + 1}: ${line}`)
-      .join('\n');
-
-    return `--- ${filePath} ---\n${numbered}`;
-  }
-
-  private async fetchPullRequestDiff(prNumber: number) {
-    const response = await this.octokit.rest.pulls.get({
+  private async getLatestImplementationPlan(issueNumber: number) {
+    const comments = await this.octokit.rest.issues.listComments({
       ...this.ctx,
-      pull_number: prNumber,
-      mediaType: {
-        format: 'diff'
-      }
+      issue_number: issueNumber,
+      per_page: 100
     });
 
-    return response.data as unknown as string;
+    const matchingComment = [...comments.data]
+      .reverse()
+      .find((comment: any) => typeof comment.body === 'string' && comment.body.startsWith('**Implementation Plan**'));
+
+    return matchingComment?.body || '';
   }
 
   private buildPullRequestWelcomeMessage(issueNumber: number, author: string) {
@@ -600,7 +484,7 @@ export class BotController {
         '**Review flow here:**',
         '1. Leave inline review comments or submit a full review on the PR.',
         '2. Either submit a review with the exact text `ready for rework` or comment `ready for rework` on the PR when the feedback set is complete.',
-        '3. I will collect the review feedback, changed files, and diff, then apply only that rework.',
+        '3. I will collect the open review feedback, revisit the linked feature spec and plan, and let Codex apply only that rework.',
         '4. For broader polish, comment `ready for refinement <your instruction>` on the PR.',
       ].join('\n'),
       ['**Examples:**', '`ready for rework`\n`ready for refinement make all bot copy warmer and more concise`'].join('\n'),
@@ -621,6 +505,39 @@ export class BotController {
 
     const suffix = Date.now().toString(36);
     return `codex/issue-${issueNumber}-${slug || 'implementation'}-${suffix}`;
+  }
+
+  private async getPullRequestFeatureContext(prNumber: number) {
+    const pr = await this.octokit.rest.pulls.get({ ...this.ctx, pull_number: prNumber });
+    const prTitle = pr.data.title || `Pull Request #${prNumber}`;
+    const prBody = pr.data.body || '';
+    const linkedIssueNumber = this.extractLinkedIssueNumber(prBody);
+
+    if (!linkedIssueNumber) {
+      return {
+        title: prTitle,
+        spec: prBody || 'No linked issue specification found.',
+        plan: '',
+      };
+    }
+
+    const issue = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: linkedIssueNumber });
+    const plan = await this.getLatestImplementationPlan(linkedIssueNumber);
+
+    return {
+      title: issue.data.title || prTitle,
+      spec: issue.data.body || 'No linked issue specification found.',
+      plan,
+    };
+  }
+
+  private extractLinkedIssueNumber(text: string) {
+    const match = text.match(/Issue\s+#(\d+)/i);
+    if (!match) {
+      return null;
+    }
+
+    return Number(match[1]);
   }
 
   private formatSystemError(error: { message?: string }) {

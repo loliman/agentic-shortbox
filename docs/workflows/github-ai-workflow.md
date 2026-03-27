@@ -10,12 +10,12 @@ GitHub Actions are both the trigger surface and the runtime host.
 - Status comments and `state:` labels are updated from the same runtime that performs planning or implementation.
 
 ## Labels (Configuration)
-- `agent:<name>`
+- `agent:codex`
 - `model:<tier>`
 
 ## Issue Commands (Triggers)
 - `ready for specification` (Splits an epic into child issues)
-- `ready for planning` or `ready for planning!` (Creates a plan or forces one)
+- `ready for planning` or `ready for planning without questions` (Creates a plan or forces one without clarification)
 - `ready for implementation` (Creates code changes, commits, and opens a PR)
 
 ## PR Commands (Triggers)

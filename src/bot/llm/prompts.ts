@@ -47,27 +47,34 @@ Format:
 ]`;
 }
 
-export function generateCodePrompt(planText: string, instructions: string, currentCodeContext?: string): string {
-  return `You are an AI Software Engineer implementing a feature based on a strict Implementation Plan.
-You MUST write the executable code files to manifest the plan.
+export function generateCodePrompt(taskTitle: string, taskInstructions: string, currentCodeContext?: string): string {
+  return `You are an AI software engineering agent working inside an already checked out repository.
+Your job is to inspect the provided repository context, understand the existing code, and return the exact file contents needed for the requested implementation.
 
-Implementation Plan:
+Primary Task:
 """
-${planText}
-"""
-
-Task Additions/Fixes (if any):
-"""
-${instructions}
+${taskTitle}
 """
 
-Existing Code Context:
+Execution Instructions:
 """
-${currentCodeContext || 'No existing context provided.'}
+${taskInstructions}
 """
 
-MANDATORY INSTRUCTION: You MUST return precisely a JSON string (with no markdown wrapping, no \`\`\`json) representing an array of files to write/overwrite.
-Ensure paths are relative to the root of the repository (e.g. "src/lib/myFile.ts").
+Repository Working Context:
+"""
+${currentCodeContext || 'No repository context provided.'}
+"""
+
+Agent Rules:
+1. Prefer updating existing files over creating new ones.
+2. Only create new files when the repository context makes that necessary.
+3. Reuse the naming, structure, and conventions already present in the repository.
+4. Keep unrelated code unchanged.
+5. Treat the repository context as the source of truth over generic assumptions.
+
+MANDATORY INSTRUCTION: You MUST return precisely a JSON string (with no markdown wrapping, no \`\`\`json) representing an array of files to write or overwrite.
+Ensure paths are relative to the repository root (for example "src/lib/myFile.ts").
 Format:
 [
   { "path": "src/api/routes.ts", "content": "import { Router } from 'express';\\n..." },

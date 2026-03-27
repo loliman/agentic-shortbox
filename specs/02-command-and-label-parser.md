@@ -15,7 +15,7 @@ Implements Section 5 (Execution Configuration) and Section 6 (Commands) of `AI_F
 
 ## User Scenarios
 1. **Given** a comment `ready for planning`, **When** labels `agent:codex` and `model:fast` are present, **Then** the parser returns a plan command with the requested configuration.
-2. **Given** conflicting labels `agent:codex`, `agent:gemini`, **When** a command is parsed, **Then** the system gracefully fails and posts an error comment.
+2. **Given** an unsupported provider label such as `agent:gemini`, **When** a command is parsed, **Then** the system gracefully fails and posts an error comment because only Codex is supported.
 3. **Given** free-text "Please write the code for me", **Then** the parser ignores it.
 
 ## Affected Areas

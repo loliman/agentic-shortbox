@@ -25,7 +25,7 @@ The system requires a strict, predictable parser to determine intent from GitHub
 - Unit tests (`src/core/__tests__/parser.test.ts`) verifying:
   - Valid command extraction (ignoring whitespace).
   - Proper mapping of `agent:name` and `model:tier` labels.
-  - Exception throwing on conflicting agent labels (e.g. `['agent:codex', 'agent:gemini']`).
+  - Exception throwing on unsupported provider labels (e.g. `['agent:gemini']`).
   - Fallback to default `agent` and `model` if none are provided.
 - Update `src/github/__tests__/action.test.ts` to assert we handle `ISSUE_LABELS` safely.
 

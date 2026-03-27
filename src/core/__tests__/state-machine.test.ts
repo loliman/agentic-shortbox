@@ -37,6 +37,7 @@ describe('State Machine Matrix Transitions', () => {
   it('allows PR evaluation flows (implementing -> in-review -> reworking -> etc)', () => {
     expect(evaluateTransition('implementing', 'review')).toBe('in-review');
     expect(evaluateTransition('in-review', 'rework')).toBe('reworking');
+    expect(evaluateTransition('in-review', 'refinement')).toBe('reworking');
     expect(evaluateTransition('reworking', 'review')).toBe('in-review');
     expect(evaluateTransition('in-review', 'done')).toBe('done');
   });

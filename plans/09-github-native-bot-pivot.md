@@ -35,7 +35,7 @@ The heart of the application moves to `src/github/action.ts` and `.github/workfl
 
 #### [MODIFY] `.github/workflows/ai-orchestrator.yml`
 - Expand triggers to listen to `issues: [opened]` for the welcome bot.
-- Inject `OPENAI_API_KEY` and `GEMINI_API_KEY` directly from `secrets`.
+- Inject `OPENAI_API_KEY` directly from `secrets`.
 - Run the compiled `dist/github/action.js` natively on the runner.
 
 ---
@@ -45,8 +45,8 @@ We refactor the domain logic to execute locally inside the Action Runner.
 
 #### [NEW] `src/core/bot.ts` (or similar)
 Instead of a router, we create a native Bot Controller that handles:
-- **Welcome Trigger**: When an issue opens, lists available LLMs based on `process.env` configs and posts usage instructions.
-- **Planning Pipeline**: On `ready for planning` or `ready for planning!`. Forces a plan generation against `/plans/template`.
+- **Welcome Trigger**: When an issue opens, explains the Codex workflow based on `process.env` config and posts usage instructions.
+- **Planning Pipeline**: On `ready for planning` or `ready for planning without questions`. Generates a plan against the plan template.
 - **Implementation Pipeline**: On `ready for implementation`. Creates a branch on the local actions-runner workspace, triggers the LLM, commits files, pushes to `origin`, and creates a PR.
 - **Review Pipeline**: On `ready for rework`, collects PR review feedback and alters code accordingly.
 - **Specification Pipeline**: On `ready for specification`. Splits issues based on `specs/templates`.
@@ -66,4 +66,4 @@ Instead of a router, we create a native Bot Controller that handles:
 - Unit tests for the new `bot.ts` methods mocking GitHub context.
 
 ### Manual Verification
-- We will trigger an issue locally/remotely and observe if the GitHub Action picks it up, posts the welcome model, and correctly executes a `ready for planning!` command directly on GitHub without webhooks.
+- We will trigger an issue locally/remotely and observe if the GitHub Action picks it up, posts the welcome message, and correctly executes a `ready for planning without questions` command directly on GitHub without webhooks.

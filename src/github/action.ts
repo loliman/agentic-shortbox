@@ -11,9 +11,7 @@ export async function main() {
     // When consumed as a reusable action, keys arrive via `with:` inputs.
     // When run directly in the host workflow via env:, process.env is already set.
     const openaiKey = core.getInput('openai-api-key') || process.env.OPENAI_API_KEY;
-    const geminiKey = core.getInput('gemini-api-key') || process.env.GEMINI_API_KEY;
     if (openaiKey) process.env.OPENAI_API_KEY = openaiKey;
-    if (geminiKey) process.env.GEMINI_API_KEY = geminiKey;
 
     const octokit = github.getOctokit(token);
     const controller = new BotController(octokit, {

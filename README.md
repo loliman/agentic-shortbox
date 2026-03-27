@@ -12,13 +12,13 @@ Open an Issue. Comment a command. The bot does the rest.
 
 | Command | What happens |
 |---|---|
-| *(open an issue)* | Bot welcomes you and lists available LLMs |
+| *(open an issue)* | Bot welcomes you and explains the Codex workflow |
 | `ready for specification` | Splits an Epic into labelled sub-issues |
 | `ready for planning` | Generates a full implementation plan (hesitates if spec is vague) |
-| `ready for planning!` | Forces a plan without hesitation |
-| `ready for implementation` | Writes code, commits to a branch, opens a PR |
-| `ready for rework` | On a PR: bot gathers review feedback and applies the requested rework |
-| `ready for refinement <instruction>` | On a PR: bot applies broader polish based on the inline instruction plus current PR context |
+| `ready for planning without questions` | Forces a plan without a clarification step |
+| `ready for implementation` | Runs Codex in the checked-out repo, commits to a branch, opens a PR |
+| `ready for rework` | On a PR: bot passes the linked feature spec, plan, and open review feedback to Codex |
+| `ready for refinement <instruction>` | On a PR: bot passes the linked feature spec, plan, and your refinement instruction to Codex |
 
 ---
 
@@ -50,10 +50,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: christian-riese/agentic-shortbox@v1
+      - uses: christian-riese/agentic-shortbox@v0.3.0
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
 ```
 
 ### Step 2 — Add your API secrets
@@ -62,10 +61,7 @@ In your repo: **Settings → Secrets and variables → Actions → New repositor
 
 | Secret name | Required |
 |---|---|
-| `OPENAI_API_KEY` | Optional (enables `agent:codex`) |
-| `GEMINI_API_KEY` | Optional (enables `agent:gemini`) |
-
-At least one key must be set for the bot to be active.
+| `OPENAI_API_KEY` | Required |
 
 ### Step 3 — Configure per Issue
 
@@ -73,8 +69,7 @@ Apply labels to each issue before giving commands:
 
 | Label | Meaning |
 |---|---|
-| `agent:codex` | Use OpenAI (GPT-4o) |
-| `agent:gemini` | Use Google Gemini |
+| `agent:codex` | Optional explicit Codex label |
 | `model:fast` | Use the faster/cheaper model |
 | `model:strong` | Use the strongest model (default) |
 
@@ -84,18 +79,28 @@ For Pull Requests:
 - Use `ready for rework` after concrete review feedback is in place.
 - Use `ready for refinement <instruction>` when you want broader polish and put the full instruction in the same comment.
 
+Command rules:
+- Commands should stand alone in the comment.
+- The only exception is `ready for refinement <instruction>`, where everything after the command is treated as the refinement instruction.
+
 ---
 
 ## 🧠 AI Governance
 
-The bot automatically reads your repository's governance files and injects them into every LLM prompt before executing any command:
+Every command runs through Codex in the repository workspace.
 
-- `AGENTS.md` — Architectural rules and boundaries
-- `README.md` — Project overview
-- `specs/templates/feature-spec.md` — Spec format
-- `plans/templates/implementation-plan.md` — Plan format
+The bot gives Codex:
+- the feature spec
+- the latest implementation plan, when one exists
+- the command-specific instruction
 
-The better your `AGENTS.md`, the smarter the bot. It cannot invent architecture it hasn't been told about.
+Codex is then expected to inspect and obey:
+- `AGENTS.md`
+- `docs/`
+- `plans/`
+- `specs/`
+
+This keeps the system AI-first: the agent gathers its own repository context instead of relying on a giant prebuilt prompt dump.
 
 ---
 
@@ -109,4 +114,4 @@ git tag vX.Y.Z
 git push origin main --tags
 ```
 
-Then update consumers from `@v1` to `@vX.Y.Z` (or keep `@v1` pointing to the latest tag via a moving tag).
+Then update consumers from `@v0.3.0` to the next tag as needed.

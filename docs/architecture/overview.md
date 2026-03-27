@@ -1,6 +1,6 @@
 # System Architecture Overview
 
-This document describes the high-level system architecture, external dependencies, and execution model for the GitHub-native AI bot. The current architecture is intentionally local to the GitHub Actions runner: validation happens at the action edge, while planning and implementation run inside the checked-out repository workspace.
+This document describes the high-level system architecture, external dependencies, and execution model for the GitHub-native AI bot. The current architecture is intentionally local to the GitHub Actions runner: validation happens at the action edge, while every AI command is executed through Codex inside the checked-out repository workspace.
 
 ## 1. GitHub Action Entrypoint
 The GitHub Action is the stateless edge of the system.
@@ -18,10 +18,10 @@ Pure workflow validation lives in `src/core/`.
 The stateful bot logic lives in `src/bot/`.
 - **Responsibility**: Coordinate welcome messages, planning, specification generation, implementation, and PR rework handling.
 - **Collaborators**:
-  - `llm/client.ts` for prompt execution
+  - `codex/runner.ts` for all AI command execution
   - `git/manager.ts` for local git and filesystem operations
   - `provider/github.ts` and Octokit integrations for comments, labels, issues, and PRs
-- **Execution model**: The controller operates directly on the runner's local workspace instead of dispatching to an external worker or webhook service.
+- **Execution model**: The controller operates directly on the runner's local workspace instead of dispatching to an external worker or webhook service. It passes the feature spec, latest plan, and command instruction to Codex, and Codex gathers the rest of its context from the repository on its own.
 
 ## 4. Git and Repository Operations
 Git operations are performed locally through `src/bot/git/manager.ts`.
@@ -30,5 +30,5 @@ Git operations are performed locally through `src/bot/git/manager.ts`.
 
 ## 5. Configuration Sources
 - GitHub labels provide per-issue configuration.
-- GitHub Actions secrets provide runtime credentials such as `GITHUB_TOKEN`, `OPENAI_API_KEY`, and `GEMINI_API_KEY`.
-- Governance context comes from repository files such as `AGENTS.md`, `README.md`, `docs/`, `specs/`, and `plans/`.
+- GitHub Actions secrets provide runtime credentials such as `GITHUB_TOKEN` and `OPENAI_API_KEY`.
+- Governance context comes from repository files such as `AGENTS.md`, `docs/`, `specs/`, and `plans/`, which Codex is instructed to inspect directly.

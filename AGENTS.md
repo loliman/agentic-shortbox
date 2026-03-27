@@ -14,7 +14,7 @@ Agentic Shortbox is a repository strictly dedicated to the **AI Orchestrator Bot
 
 It is a command-driven AI orchestration framework running entirely natively inside GitHub Actions:
 - stateless GitHub actions acting as the event gateway.
-- unified Node.js bot logic executing prompts securely.
+- unified Node.js bot logic invoking Codex securely inside the checked-out repository.
 - explicit state-machine validation for AI lifecycles
 - direct Octokit and Local Git integrations
 
@@ -31,7 +31,7 @@ The project is organized into logical layers representing strict separation of c
 
 - `.github/workflows/` → acts completely isolated, invoking `src/github/action.ts`
 - `src/github/action.ts` → parses GitHub webhooks payloads natively and routes events.
-- `src/bot/` → The LLM integration layer acting on `controller.ts`, invoking Github and LLM logic natively via the `process.cwd()` workspace.
+- `src/bot/` → The Codex integration layer acting on `controller.ts`, invoking GitHub and Codex logic natively via the `process.cwd()` workspace.
 - `src/core/` → domain-independent parsers and state machine validators.
 
 ---
@@ -52,14 +52,16 @@ Triggers the bot based on issues and comments.
 Executes all LLM calls, manipulates PRs and Branches dynamically.
 Contains:
 - `controller.ts`
-- `llm/client.ts`
+- `codex/runner.ts`
 - `git/manager.ts`
-- `provider/`
 
 **Rules:**
 - Must exclusively use `manager.ts` for file/system Git operations.
 - Must read configuration from the GitHub event payload and labels (never hardcode repository-specific values).
 - Cannot access `.github/` workflows.
+- Must route every AI command through Codex running inside the repository workspace.
+- Must pass the feature spec, latest implementation plan when available, and the command instruction to Codex.
+- Must instruct Codex to inspect and obey `AGENTS.md`, `docs/`, `plans/`, and `specs/` itself instead of preloading large handcrafted repository context blobs.
 
 ## `specs/` and `plans/`
 - Governance layer.
