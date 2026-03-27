@@ -219,13 +219,10 @@ export class CodexRunner {
     const codexCommand = this.resolveCodexCommand();
     const codexEnv = this.buildCodexEnv();
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-runner-'));
-    const schemaPath = path.join(tempDir, 'schema.json');
     const outputPath = path.join(tempDir, 'output.json');
 
     core.info(`[CodexRunner] Launching Codex CLI via ${codexCommand.executable}`);
     core.info(`[CodexRunner] OPENAI_API_KEY present: ${codexEnv.OPENAI_API_KEY ? 'yes' : 'no'}`);
-
-    fs.writeFileSync(schemaPath, JSON.stringify(schema, null, 2), 'utf8');
 
     const result = spawnSync(
       codexCommand.executable,
@@ -238,8 +235,6 @@ export class CodexRunner {
         'workspace-write',
         '--color',
         'never',
-        '--output-schema',
-        schemaPath,
         '--output-last-message',
         outputPath,
         '--model',
@@ -263,7 +258,7 @@ export class CodexRunner {
       }
 
       const raw = fs.readFileSync(outputPath, 'utf8').trim();
-      return JSON.parse(raw) as T;
+      return this.parseStructuredOutput<T>(raw, schema);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
@@ -334,6 +329,23 @@ export class CodexRunner {
 
     const tail = lines.slice(-20).join('\n').trim();
     return tail || 'Codex execution failed.';
+  }
+
+  private parseStructuredOutput<T>(raw: string, schema: Record<string, unknown>): T {
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      const schemaSummary = JSON.stringify(schema, null, 2);
+      throw new Error(
+        [
+          'Codex returned a non-JSON final message.',
+          'Expected the final message to be valid JSON matching this schema:',
+          schemaSummary,
+          'Actual final message:',
+          raw,
+        ].join('\n')
+      );
+    }
   }
 
   private buildCodexEnv(): NodeJS.ProcessEnv {

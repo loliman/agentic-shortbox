@@ -32760,11 +32760,9 @@ class CodexRunner {
         const codexCommand = this.resolveCodexCommand();
         const codexEnv = this.buildCodexEnv();
         const tempDir = fs_1.default.mkdtempSync(path_1.default.join(os_1.default.tmpdir(), 'codex-runner-'));
-        const schemaPath = path_1.default.join(tempDir, 'schema.json');
         const outputPath = path_1.default.join(tempDir, 'output.json');
         core.info(`[CodexRunner] Launching Codex CLI via ${codexCommand.executable}`);
         core.info(`[CodexRunner] OPENAI_API_KEY present: ${codexEnv.OPENAI_API_KEY ? 'yes' : 'no'}`);
-        fs_1.default.writeFileSync(schemaPath, JSON.stringify(schema, null, 2), 'utf8');
         const result = (0, child_process_1.spawnSync)(codexCommand.executable, [
             ...codexCommand.args,
             'exec',
@@ -32774,8 +32772,6 @@ class CodexRunner {
             'workspace-write',
             '--color',
             'never',
-            '--output-schema',
-            schemaPath,
             '--output-last-message',
             outputPath,
             '--model',
@@ -32794,7 +32790,7 @@ class CodexRunner {
                 throw new Error(this.formatCodexFailure(result.stderr, result.stdout));
             }
             const raw = fs_1.default.readFileSync(outputPath, 'utf8').trim();
-            return JSON.parse(raw);
+            return this.parseStructuredOutput(raw, schema);
         }
         finally {
             fs_1.default.rmSync(tempDir, { recursive: true, force: true });
@@ -32856,6 +32852,21 @@ class CodexRunner {
             .filter((line) => line.trim().length > 0);
         const tail = lines.slice(-20).join('\n').trim();
         return tail || 'Codex execution failed.';
+    }
+    parseStructuredOutput(raw, schema) {
+        try {
+            return JSON.parse(raw);
+        }
+        catch {
+            const schemaSummary = JSON.stringify(schema, null, 2);
+            throw new Error([
+                'Codex returned a non-JSON final message.',
+                'Expected the final message to be valid JSON matching this schema:',
+                schemaSummary,
+                'Actual final message:',
+                raw,
+            ].join('\n'));
+        }
     }
     buildCodexEnv() {
         const env = {

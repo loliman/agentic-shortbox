@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: christian-riese/agentic-shortbox@v1.1.2
+      - uses: christian-riese/agentic-shortbox@v1.1.0
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
@@ -107,11 +107,9 @@ This keeps the system AI-first: the agent gathers its own repository context ins
 ## 🔖 Releasing a New Version
 
 ```bash
-npm run build          # Regenerate dist/index.js
-git add dist/
-git commit -m "build: release vX.Y.Z"
-git tag vX.Y.Z
-git push origin main --tags
+npm run release:prepare          # patch bump
+npm run release:prepare -- minor # optional minor bump
+npm run release:prepare -- major # optional major bump
 ```
 
-Then update consumers from `@v1.0.0` to the next tag as needed.
+The script updates `package.json`, [`.github/workflows/agentic-bot.yml`](/Users/christian/agentic-shortbox/.github/workflows/agentic-bot.yml), and [`README.md`](/Users/christian/agentic-shortbox/README.md), runs the build, stages everything, creates the release commit, and tags it. Push remains manual.

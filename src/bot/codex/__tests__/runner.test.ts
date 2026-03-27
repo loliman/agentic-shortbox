@@ -45,7 +45,7 @@ describe('CodexRunner', () => {
     expect(result).toEqual({ action: 'plan', content: '# Plan' });
     expect(spawnSync).toHaveBeenCalledWith(
       expect.stringContaining('node_modules/.bin/codex'),
-      expect.arrayContaining(['exec', '-', '--output-schema', '/tmp/codex-runner-123/schema.json', '--output-last-message', '/tmp/codex-runner-123/output.json', '--model', 'codex-mini-latest']),
+      expect.arrayContaining(['exec', '-', '--output-last-message', '/tmp/codex-runner-123/output.json', '--model', 'codex-mini-latest']),
       expect.objectContaining({
         cwd: process.cwd(),
         env: expect.objectContaining({
@@ -120,6 +120,16 @@ describe('CodexRunner', () => {
     const runner = new CodexRunner();
     await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
       'Codex CLI is not available in this checkout. Ensure project dependencies are installed and `@openai/codex` is present before running the action.'
+    );
+  });
+
+  it('fails clearly when Codex returns a non-JSON final message', async () => {
+    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
+    (fs.readFileSync as jest.Mock).mockReturnValue('not json');
+
+    const runner = new CodexRunner();
+    await expect(runner.generateImplementationPlan('Feature', 'Body', false, 'fast')).rejects.toThrow(
+      'Codex returned a non-JSON final message.'
     );
   });
 });
