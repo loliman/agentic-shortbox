@@ -33403,6 +33403,10 @@ class BotController {
         ]);
         const agent = new runner_1.CodexRunner();
         const result = await agent.applyReviewRework(featureContext.title, featureContext.spec, featureContext.plan, reviewFeedback, config.model);
+        const hasChanges = await git.hasWorkingTreeChanges();
+        if (!hasChanges) {
+            throw new Error(`Codex reported file changes (${result.changedFiles.join(', ') || 'none'}), but git status stayed clean. Aborting before commit.`);
+        }
         const pushed = await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
         if (!pushed) {
             throw new Error('Codex did not produce any committed file changes for this rework. Aborting instead of claiming success.');
@@ -33426,6 +33430,10 @@ class BotController {
         const featureContext = await this.getPullRequestFeatureContext(payload.number);
         const agent = new runner_1.CodexRunner();
         const result = await agent.applyReviewRefinement(featureContext.title, featureContext.spec, featureContext.plan, refinementInstruction, config.model);
+        const hasChanges = await git.hasWorkingTreeChanges();
+        if (!hasChanges) {
+            throw new Error(`Codex reported file changes (${result.changedFiles.join(', ') || 'none'}), but git status stayed clean. Aborting before commit.`);
+        }
         const pushed = await git.commitAndPush('PR Refinement: apply requested polish', headBranch);
         if (!pushed) {
             throw new Error('Codex did not produce any committed file changes for this refinement. Aborting instead of claiming success.');
@@ -33705,6 +33713,10 @@ class GitManager {
                 throw e;
             }
         }
+    }
+    async hasWorkingTreeChanges() {
+        const result = await execAsync('git status --porcelain', { cwd: this.workspace });
+        return result.stdout.trim().length > 0;
     }
     async commitAndPush(message, branchName) {
         core.info(`[GitManager] Committing changes...`);

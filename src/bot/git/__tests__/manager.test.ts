@@ -149,4 +149,20 @@ describe('GitManager', () => {
       await expect(git.commitAndPush('Test', 'ai')).rejects.toThrow('unable to auto-detect email address');
     });
   });
+
+  describe('hasWorkingTreeChanges', () => {
+    it('returns true when git status reports changes', async () => {
+      execAsyncMock.mockResolvedValueOnce({ stdout: ' M src/foo.ts\n' });
+
+      await expect(git.hasWorkingTreeChanges()).resolves.toBe(true);
+      expect(execAsyncMock).toHaveBeenCalledWith('git status --porcelain', expect.any(Object));
+    });
+
+    it('returns false when git status is clean', async () => {
+      execAsyncMock.mockResolvedValueOnce({ stdout: '' });
+
+      await expect(git.hasWorkingTreeChanges()).resolves.toBe(false);
+      expect(execAsyncMock).toHaveBeenCalledWith('git status --porcelain', expect.any(Object));
+    });
+  });
 });

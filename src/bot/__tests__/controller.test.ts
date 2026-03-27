@@ -147,6 +147,7 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
+      hasWorkingTreeChanges: jest.fn().mockResolvedValue(true),
       commitAndPush: jest.fn().mockResolvedValue(true),
     };
     (GitManager as jest.Mock).mockImplementation(() => mockGit);
@@ -185,6 +186,7 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
+      hasWorkingTreeChanges: jest.fn().mockResolvedValue(true),
       commitAndPush: jest.fn().mockResolvedValue(true),
     };
     (GitManager as jest.Mock).mockImplementation(() => mockGit);
@@ -256,6 +258,7 @@ describe('BotController', () => {
       expect.not.stringContaining('Old resolved comment.'),
       'fast'
     );
+    expect(mockGit.hasWorkingTreeChanges).toHaveBeenCalled();
     expect(mockGit.commitAndPush).toHaveBeenCalledWith('PR Rework: address review feedback', 'existing-branch');
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 99,
@@ -273,6 +276,7 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
+      hasWorkingTreeChanges: jest.fn().mockResolvedValue(true),
       commitAndPush: jest.fn().mockResolvedValue(true),
     };
     (GitManager as jest.Mock).mockImplementation(() => mockGit);
@@ -295,6 +299,7 @@ describe('BotController', () => {
       'make the bot tone friendlier and more concise',
       'strong'
     );
+    expect(mockGit.hasWorkingTreeChanges).toHaveBeenCalled();
     expect(mockGit.commitAndPush).toHaveBeenCalledWith('PR Refinement: apply requested polish', 'existing-branch');
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 99,
@@ -312,6 +317,7 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
+      hasWorkingTreeChanges: jest.fn().mockResolvedValue(false),
       commitAndPush: jest.fn().mockResolvedValue(false),
     };
     (GitManager as jest.Mock).mockImplementation(() => mockGit);
@@ -350,12 +356,13 @@ describe('BotController', () => {
       body: 'ready for rework',
       labels: ['state:in-review', 'model:fast'],
       isPR: true,
-    })).rejects.toThrow('Codex did not produce any committed file changes for this rework.');
+    })).rejects.toThrow('Codex reported file changes (src/foo.ts), but git status stayed clean. Aborting before commit.');
 
     expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 99,
       body: expect.stringContaining('✅ Addressed feedback pushed'),
     }));
+    expect(mockGit.commitAndPush).not.toHaveBeenCalled();
   });
 
   it('rejects unsupported non-codex agent labels', async () => {

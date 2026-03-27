@@ -308,6 +308,12 @@ export class BotController {
        reviewFeedback,
        config.model
      );
+     const hasChanges = await git.hasWorkingTreeChanges();
+     if (!hasChanges) {
+       throw new Error(
+         `Codex reported file changes (${result.changedFiles.join(', ') || 'none'}), but git status stayed clean. Aborting before commit.`
+       );
+     }
      const pushed = await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
      if (!pushed) {
        throw new Error('Codex did not produce any committed file changes for this rework. Aborting instead of claiming success.');
@@ -345,6 +351,12 @@ export class BotController {
        refinementInstruction,
        config.model
      );
+     const hasChanges = await git.hasWorkingTreeChanges();
+     if (!hasChanges) {
+       throw new Error(
+         `Codex reported file changes (${result.changedFiles.join(', ') || 'none'}), but git status stayed clean. Aborting before commit.`
+       );
+     }
      const pushed = await git.commitAndPush('PR Refinement: apply requested polish', headBranch);
      if (!pushed) {
        throw new Error('Codex did not produce any committed file changes for this refinement. Aborting instead of claiming success.');

@@ -57,6 +57,11 @@ export class GitManager {
     }
   }
 
+  async hasWorkingTreeChanges(): Promise<boolean> {
+    const result = await execAsync('git status --porcelain', { cwd: this.workspace });
+    return result.stdout.trim().length > 0;
+  }
+
   async commitAndPush(message: string, branchName: string): Promise<boolean> {
     core.info(`[GitManager] Committing changes...`);
     await execAsync(`git add .`, { cwd: this.workspace });
