@@ -1,5 +1,3 @@
-// Test file for Controller error message validations
-
 import { describe, it, expect } from '@jest/globals';
 import { Controller } from '../controller';
 
@@ -19,7 +17,7 @@ describe("Test the Controller Error Messages", () => {
   });
 
   it("should throw the correct error message", () => {
-    const errorMessage = "Test Error Message";
+    const errorMessage = "am I an animal?";
 
     expect(() => {
       mockController.triggerError(errorMessage);
@@ -27,7 +25,7 @@ describe("Test the Controller Error Messages", () => {
   });
 
   it("should confirm error is an instance of Error", () => {
-    const errorMessage = "Test Error Instance";
+    const errorMessage = "am I real?";
 
     try {
       mockController.triggerError(errorMessage);
