@@ -51730,7 +51730,7 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
                 return await this.handleReviewFix(payload);
             }
             catch (e) {
-                await this.postStatus(payload.number, `🚨 **System Error:**\n\n\`\`\`text\n${e.message}\n\`\`\`\n\nThe LLM Controller encountered a critical failure. See Action Logs for details.`);
+                await this.postStatus(payload.number, this.formatSystemError(e));
                 throw e;
             }
         }
@@ -51758,7 +51758,7 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
                 await this.handleSpecification(payload, config);
             }
             catch (e) {
-                await this.postStatus(payload.number, `🚨 **System Error:**\n\n\`\`\`text\n${e.message}\n\`\`\`\n\nThe LLM Controller encountered a critical failure. See Action Logs for details.`);
+                await this.postStatus(payload.number, this.formatSystemError(e));
                 throw e;
             }
         }
@@ -51768,7 +51768,7 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
                 await this.handlePlanning(payload, config, force);
             }
             catch (e) {
-                await this.postStatus(payload.number, `🚨 **System Error:**\n\n\`\`\`text\n${e.message}\n\`\`\`\n\nThe LLM Controller encountered a critical failure. See Action Logs for details.`);
+                await this.postStatus(payload.number, this.formatSystemError(e));
                 throw e;
             }
         }
@@ -51777,7 +51777,7 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
                 await this.handleImplementation(payload, config);
             }
             catch (e) {
-                await this.postStatus(payload.number, `🚨 **System Error:**\n\n\`\`\`text\n${e.message}\n\`\`\`\n\nThe LLM Controller encountered a critical failure. See Action Logs for details.`);
+                await this.postStatus(payload.number, this.formatSystemError(e));
                 throw e;
             }
         }
@@ -51795,8 +51795,6 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
                 ...this.ctx,
                 title: spec.title,
                 body: spec.specMarkdown
-                    ? `This is an auto-generated sub-issue from #${payload.number}.\n\n${spec.specMarkdown}`
-                    : `This is an auto-generated sub-issue from #${payload.number}.\n\n${spec.description || ''}\n\nFile changes intent:\n${(spec.affectedFiles || []).join('\n')}`
             });
             links.push(`#${created.data.number} - ${spec.title}`);
         }
@@ -51867,6 +51865,13 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
             await this.octokit.rest.issues.removeLabel({ ...this.ctx, issue_number: issueNumber, name: lbl });
         }
         await this.octokit.rest.issues.addLabels({ ...this.ctx, issue_number: issueNumber, labels: [newLabel] });
+    }
+    formatSystemError(error) {
+        const message = error.message || 'Unknown error';
+        const guidance = message.includes('GitHub Actions is not permitted to create or approve pull requests')
+            ? '\n\nGitHub is rejecting PR creation from the workflow token. Enable the repository setting `Allow GitHub Actions to create and approve pull requests` under `Settings -> Actions -> General -> Workflow permissions`, then rerun the command.'
+            : '\n\nThe LLM Controller encountered a critical failure. See Action Logs for details.';
+        return `🚨 **System Error:**\n\n\`\`\`text\n${message}\n\`\`\`${guidance}`;
     }
 }
 exports.BotController = BotController;
@@ -52000,6 +52005,7 @@ const openai_1 = __nccwpck_require__(2583);
 const genai_1 = __nccwpck_require__(4425);
 const fs_1 = __importDefault(__nccwpck_require__(9896));
 const path_1 = __importDefault(__nccwpck_require__(6928));
+const prompts_1 = __nccwpck_require__(8946);
 class MissingConfigurationError extends Error {
     constructor(message) {
         super(message);
@@ -52050,17 +52056,28 @@ class LLMClient {
         loadSafely('plans/templates/implementation-plan.md');
         return context;
     }
+    readRequiredFile(filePath) {
+        const fullPath = path_1.default.resolve(process.cwd(), filePath);
+        if (!fs_1.default.existsSync(fullPath)) {
+            throw new Error(`Required template file is missing: ${filePath}`);
+        }
+        return fs_1.default.readFileSync(fullPath, 'utf-8');
+    }
     async generateEpicSplit(title, body) {
         const sys = this.gatherSystemContext();
-        const prompt = `\n\n${sys}\n\n=== TASK: EPIC SPLITTING ===\nYou are a Product Owner breaking down an epic into sub-issues.\nEpic Title: ${title}\nEpic Body: ${body}\n\nReturn EXACTLY a JSON array mapping to: [{ title: string, description: string, affectedFiles: string[] }] (no markdown wrapping).`;
+        const specTemplate = this.readRequiredFile('specs/templates/feature-spec.md');
+        const prompt = `${sys}\n\n${(0, prompts_1.generateDefinePrompt)(`Epic Title: ${title}\n\nEpic Body:\n${body}`, specTemplate)}`;
         const result = await this.askJSON(prompt);
-        if (Array.isArray(result)) {
-            return result;
+        const tasks = Array.isArray(result) ? result : result?.tasks;
+        if (!Array.isArray(tasks)) {
+            throw new Error('Epic split response must be a JSON array or an object with a tasks array.');
         }
-        if (result && Array.isArray(result.tasks)) {
-            return result.tasks;
+        for (const task of tasks) {
+            if (!task.title || !task.specMarkdown) {
+                throw new Error('Epic split tasks must include both title and specMarkdown following specs/templates/feature-spec.md.');
+            }
         }
-        throw new Error('Epic split response must be a JSON array or an object with a tasks array.');
+        return tasks;
     }
     async generateImplementationPlan(title, body, force) {
         const sys = this.gatherSystemContext();
@@ -52111,6 +52128,83 @@ class LLMClient {
     }
 }
 exports.LLMClient = LLMClient;
+
+
+/***/ }),
+
+/***/ 8946:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.generatePlanPrompt = generatePlanPrompt;
+exports.generateDefinePrompt = generateDefinePrompt;
+exports.generateCodePrompt = generateCodePrompt;
+function generatePlanPrompt(issueText) {
+    return `You are a Senior Technical Architect analyzing an Epic or Feature Specification.
+Your job is to read the following specification and output a detailed markdown Implementation Plan.
+DO NOT write code implementations directly. Focus on:
+1. Identifying affected architectural layers (routing, UI, db, services).
+2. Breaking down the work into step-by-step files to be created/modified.
+3. Defining constraints or assumptions.
+
+Target Specification:
+"""
+${issueText}
+"""
+
+Return your response entirely as pure Markdown.`;
+}
+function generateDefinePrompt(parentIssueText, templateContext) {
+    return `You are an Agile Product Owner. You must break down a large Epic feature into several small, manageable development tasks.
+Read the following Epic description and generate 3 to 5 distinct Child Issues.
+Each child issue MUST have a title and a detailed markdown body that rigorously follows the provided Specification Template.
+
+Epic Description:
+"""
+${parentIssueText}
+"""
+
+Required Specification Template:
+"""
+${templateContext}
+"""
+
+MANDATORY INSTRUCTION: You MUST return precisely a JSON string (with no markdown wrapping, no \`\`\`json) representing an array of objects.
+Format:
+[
+  { "title": "Spec 01: Database Models", "specMarkdown": "# Feature: Database Models\\n\\n## Goal..." },
+  { "title": "...", "specMarkdown": "..." }
+]`;
+}
+function generateCodePrompt(planText, instructions, currentCodeContext) {
+    return `You are an AI Software Engineer implementing a feature based on a strict Implementation Plan.
+You MUST write the executable code files to manifest the plan.
+
+Implementation Plan:
+"""
+${planText}
+"""
+
+Task Additions/Fixes (if any):
+"""
+${instructions}
+"""
+
+Existing Code Context:
+"""
+${currentCodeContext || 'No existing context provided.'}
+"""
+
+MANDATORY INSTRUCTION: You MUST return precisely a JSON string (with no markdown wrapping, no \`\`\`json) representing an array of files to write/overwrite.
+Ensure paths are relative to the root of the repository (e.g. "src/lib/myFile.ts").
+Format:
+[
+  { "path": "src/api/routes.ts", "content": "import { Router } from 'express';\\n..." },
+  { "path": "...", "content": "..." }
+]`;
+}
 
 
 /***/ }),

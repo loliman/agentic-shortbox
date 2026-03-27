@@ -89,6 +89,30 @@ describe('BotController', () => {
        expect(postCall).toContain('🤖 **Workflow Error**');
        expect(postCall).toContain("Cannot transition from state 'in-review' using command 'plan'");
     });
+
+    it('adds actionable guidance for GitHub PR permission failures', async () => {
+      const payload = { number: 7, author: 'tester', body: 'ready for implementation', labels: ['state:planned'], isPR: false };
+
+      (LLMClient as jest.Mock).mockImplementation(() => ({
+        generateCode: jest.fn().mockResolvedValue([{ path: 'foo.ts', content: 'bar' }])
+      }));
+      (GitManager as jest.Mock).mockImplementation(() => ({
+        checkoutNewBranch: jest.fn(),
+        applyFileSystemChanges: jest.fn(),
+        commitAndPush: jest.fn()
+      }));
+      mockOctokit.rest.pulls.create.mockRejectedValueOnce(
+        new Error('GitHub Actions is not permitted to create or approve pull requests.')
+      );
+
+      await expect(controller.handleCommand(payload)).rejects.toThrow(
+        'GitHub Actions is not permitted to create or approve pull requests.'
+      );
+
+      const postCall = mockOctokit.rest.issues.createComment.mock.calls.at(-1)?.[0].body;
+      expect(postCall).toContain('Allow GitHub Actions to create and approve pull requests');
+      expect(postCall).toContain('Settings -> Actions -> General -> Workflow permissions');
+    });
   });
 
   describe('handlePlanning (State Machine Flow)', () => {
@@ -129,7 +153,7 @@ describe('BotController', () => {
     it('creates child issues from an epic split array response', async () => {
       (LLMClient as jest.Mock).mockImplementation(() => ({
         generateEpicSplit: jest.fn().mockResolvedValue([
-          { title: 'Spec 1', description: 'Detail', affectedFiles: ['src/core/parser.ts'] },
+          { title: 'Spec 1', specMarkdown: '# Feature: Spec 1\n\n## Goal\nDetail' },
           { title: 'Spec 2', specMarkdown: '# Feature: Spec 2' }
         ])
       }));
@@ -143,11 +167,11 @@ describe('BotController', () => {
 
       expect(mockOctokit.rest.issues.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
         title: 'Spec 1',
-        body: expect.stringContaining('Detail')
+        body: '# Feature: Spec 1\n\n## Goal\nDetail'
       }));
       expect(mockOctokit.rest.issues.create).toHaveBeenNthCalledWith(2, expect.objectContaining({
         title: 'Spec 2',
-        body: expect.stringContaining('# Feature: Spec 2')
+        body: '# Feature: Spec 2'
       }));
       expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
         body: expect.stringContaining('Epic split completed')

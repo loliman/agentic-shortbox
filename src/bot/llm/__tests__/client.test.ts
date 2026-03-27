@@ -81,41 +81,66 @@ describe('LLMClient', () => {
       process.env.OPENAI_API_KEY = 'mock-openai';
       
       const mockCreate = jest.fn().mockResolvedValue({
-        choices: [{ message: { content: '[]' } }]
+        choices: [{ message: { content: '[{\"title\":\"Spec 1\",\"specMarkdown\":\"# Feature: Spec 1\"}]' } }]
       });
       (OpenAI as unknown as jest.Mock).mockImplementation(() => ({
         chat: { completions: { create: mockCreate } }
       }));
 
-      // Simulate AGENTS.md existing, others missing
-      (fs.existsSync as jest.Mock).mockImplementation((pathStr) => pathStr.includes('AGENTS.md'));
-      (fs.readFileSync as jest.Mock).mockImplementation(() => 'Mocked System Rules');
+      (fs.existsSync as jest.Mock).mockImplementation((pathStr) => {
+        const pathValue = String(pathStr);
+        return pathValue.includes('AGENTS.md') || pathValue.includes('specs/templates/feature-spec.md');
+      });
+      (fs.readFileSync as jest.Mock).mockImplementation((pathStr) => {
+        const pathValue = String(pathStr);
+        if (pathValue.includes('specs/templates/feature-spec.md')) {
+          return '# Feature: [Feature Name]\n\n## Goal';
+        }
+        return 'Mocked System Rules';
+      });
 
       const client = new LLMClient();
       const res = await client.generateEpicSplit('Epic', 'Body');
 
-      expect(res).toEqual([]);
+      expect(res).toEqual([{ title: 'Spec 1', specMarkdown: '# Feature: Spec 1' }]);
       const sentPrompt = mockCreate.mock.calls[0][0].messages[0].content;
       
       expect(sentPrompt).toContain('Mocked System Rules');
-      expect(sentPrompt).toContain('=== SYSTEM ARCHITECTURE & GOVERNANCE ===');
-      expect(sentPrompt).toContain('=== TASK: EPIC SPLITTING ===');
+      expect(sentPrompt).toContain('Required Specification Template');
+      expect(sentPrompt).toContain('# Feature: [Feature Name]');
     });
 
-    it('accepts the legacy object shape for epic splitting', async () => {
+    it('accepts the legacy object shape for epic splitting when spec markdown is present', async () => {
       process.env.OPENAI_API_KEY = 'mock-openai';
 
       const mockCreate = jest.fn().mockResolvedValue({
-        choices: [{ message: { content: '{"tasks":[{"title":"Spec A","description":"Desc"}]}' } }]
+        choices: [{ message: { content: '{"tasks":[{"title":"Spec A","specMarkdown":"# Feature: Spec A"}]}' } }]
       });
       (OpenAI as unknown as jest.Mock).mockImplementation(() => ({
         chat: { completions: { create: mockCreate } }
       }));
+      (fs.existsSync as jest.Mock).mockReturnValue(true);
+      (fs.readFileSync as jest.Mock).mockImplementation((pathStr) =>
+        String(pathStr).includes('specs/templates/feature-spec.md')
+          ? '# Feature: [Feature Name]'
+          : 'Mocked System Rules'
+      );
 
       const client = new LLMClient();
       const res = await client.generateEpicSplit('Epic', 'Body');
 
-      expect(res).toEqual([{ title: 'Spec A', description: 'Desc' }]);
+      expect(res).toEqual([{ title: 'Spec A', specMarkdown: '# Feature: Spec A' }]);
+    });
+
+    it('fails clearly when the specification template is missing', async () => {
+      process.env.OPENAI_API_KEY = 'mock-openai';
+      (fs.existsSync as jest.Mock).mockImplementation((pathStr) => String(pathStr).includes('AGENTS.md'));
+      (fs.readFileSync as jest.Mock).mockReturnValue('Mocked System Rules');
+
+      const client = new LLMClient();
+      await expect(client.generateEpicSplit('Epic', 'Body')).rejects.toThrow(
+        'Required template file is missing: specs/templates/feature-spec.md'
+      );
     });
 
     it('throws explicit errors on malformed JSON responses', async () => {

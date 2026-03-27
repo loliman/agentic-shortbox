@@ -61,7 +61,7 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
       try {
         return await this.handleReviewFix(payload);
       } catch(e: any) {
-        await this.postStatus(payload.number, `🚨 **System Error:**\n\n\`\`\`text\n${e.message}\n\`\`\`\n\nThe LLM Controller encountered a critical failure. See Action Logs for details.`);
+        await this.postStatus(payload.number, this.formatSystemError(e));
         throw e;
       }
     }
@@ -91,7 +91,7 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
       try {
         await this.handleSpecification(payload, config);
       } catch(e: any) {
-        await this.postStatus(payload.number, `🚨 **System Error:**\n\n\`\`\`text\n${e.message}\n\`\`\`\n\nThe LLM Controller encountered a critical failure. See Action Logs for details.`);
+        await this.postStatus(payload.number, this.formatSystemError(e));
         throw e;
       }
     } else if (command.type === 'plan') {
@@ -99,14 +99,14 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
       try {
         await this.handlePlanning(payload, config, force);
       } catch(e: any) {
-        await this.postStatus(payload.number, `🚨 **System Error:**\n\n\`\`\`text\n${e.message}\n\`\`\`\n\nThe LLM Controller encountered a critical failure. See Action Logs for details.`);
+        await this.postStatus(payload.number, this.formatSystemError(e));
         throw e;
       }
     } else if (command.type === 'implement') {
       try {
         await this.handleImplementation(payload, config);
       } catch(e: any) {
-         await this.postStatus(payload.number, `🚨 **System Error:**\n\n\`\`\`text\n${e.message}\n\`\`\`\n\nThe LLM Controller encountered a critical failure. See Action Logs for details.`);
+         await this.postStatus(payload.number, this.formatSystemError(e));
          throw e;
       }
     }
@@ -124,11 +124,9 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
     const links = [];
     for (const spec of tasks) {
        const created = await this.octokit.rest.issues.create({
-         ...this.ctx,
-         title: spec.title,
+          ...this.ctx,
+          title: spec.title,
          body: spec.specMarkdown
-           ? `This is an auto-generated sub-issue from #${payload.number}.\n\n${spec.specMarkdown}`
-           : `This is an auto-generated sub-issue from #${payload.number}.\n\n${spec.description || ''}\n\nFile changes intent:\n${(spec.affectedFiles || []).join('\n')}`
        });
        links.push(`#${created.data.number} - ${spec.title}`);
     }
@@ -216,5 +214,14 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
       await this.octokit.rest.issues.removeLabel({ ...this.ctx, issue_number: issueNumber, name: lbl });
     }
     await this.octokit.rest.issues.addLabels({ ...this.ctx, issue_number: issueNumber, labels: [newLabel] });
+  }
+
+  private formatSystemError(error: { message?: string }) {
+    const message = error.message || 'Unknown error';
+    const guidance = message.includes('GitHub Actions is not permitted to create or approve pull requests')
+      ? '\n\nGitHub is rejecting PR creation from the workflow token. Enable the repository setting `Allow GitHub Actions to create and approve pull requests` under `Settings -> Actions -> General -> Workflow permissions`, then rerun the command.'
+      : '\n\nThe LLM Controller encountered a critical failure. See Action Logs for details.';
+
+    return `🚨 **System Error:**\n\n\`\`\`text\n${message}\n\`\`\`${guidance}`;
   }
 }

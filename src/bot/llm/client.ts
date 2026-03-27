@@ -2,6 +2,7 @@ import { OpenAI } from 'openai';
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
 import path from 'path';
+import { generateDefinePrompt } from './prompts';
 
 export interface EpicSplitTask {
   title: string;
@@ -66,20 +67,32 @@ export class LLMClient {
     return context;
   }
 
+  private readRequiredFile(filePath: string): string {
+    const fullPath = path.resolve(process.cwd(), filePath);
+    if (!fs.existsSync(fullPath)) {
+      throw new Error(`Required template file is missing: ${filePath}`);
+    }
+    return fs.readFileSync(fullPath, 'utf-8');
+  }
+
   async generateEpicSplit(title: string, body: string): Promise<EpicSplitTask[]> {
     const sys = this.gatherSystemContext();
-    const prompt = `\n\n${sys}\n\n=== TASK: EPIC SPLITTING ===\nYou are a Product Owner breaking down an epic into sub-issues.\nEpic Title: ${title}\nEpic Body: ${body}\n\nReturn EXACTLY a JSON array mapping to: [{ title: string, description: string, affectedFiles: string[] }] (no markdown wrapping).`;
+    const specTemplate = this.readRequiredFile('specs/templates/feature-spec.md');
+    const prompt = `${sys}\n\n${generateDefinePrompt(`Epic Title: ${title}\n\nEpic Body:\n${body}`, specTemplate)}`;
     const result = await this.askJSON<EpicSplitTask[] | { tasks: EpicSplitTask[] }>(prompt);
+    const tasks = Array.isArray(result) ? result : result?.tasks;
 
-    if (Array.isArray(result)) {
-      return result;
+    if (!Array.isArray(tasks)) {
+      throw new Error('Epic split response must be a JSON array or an object with a tasks array.');
     }
 
-    if (result && Array.isArray(result.tasks)) {
-      return result.tasks;
+    for (const task of tasks) {
+      if (!task.title || !task.specMarkdown) {
+        throw new Error('Epic split tasks must include both title and specMarkdown following specs/templates/feature-spec.md.');
+      }
     }
 
-    throw new Error('Epic split response must be a JSON array or an object with a tasks array.');
+    return tasks;
   }
 
   async generateImplementationPlan(title: string, body: string, force: boolean): Promise<{ action: 'plan' | 'question', content: string }> {
