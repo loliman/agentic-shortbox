@@ -11,7 +11,7 @@ class MockController extends Controller {
   }
 }
 
-describe("Test the Controller Error Messages", () => {
+describe("TEST THE CONTROLLER ERROR MESSAGES", () => {
   let mockController: MockController;
 
   beforeEach(() => {
