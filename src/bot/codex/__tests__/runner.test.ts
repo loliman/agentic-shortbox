@@ -22,6 +22,7 @@ describe('CodexRunner', () => {
     (os.homedir as jest.Mock).mockReturnValue('/home/tester');
     (fs.mkdtempSync as jest.Mock).mockReturnValue('/tmp/codex-runner-123');
     (fs.writeFileSync as jest.Mock).mockImplementation(() => undefined);
+    (fs.mkdirSync as jest.Mock).mockImplementation(() => undefined);
     (fs.rmSync as jest.Mock).mockImplementation(() => undefined);
     (fs.existsSync as jest.Mock).mockReturnValue(true);
   });
@@ -204,6 +205,8 @@ describe('CodexRunner', () => {
         }),
       })
     );
+    expect(fs.mkdirSync).toHaveBeenCalledWith('/tmp', { recursive: true });
+    expect(fs.mkdirSync).toHaveBeenCalledWith('/home/tester/.codex', { recursive: true });
   });
 
   it('fails clearly when Codex does not write the output-last-message file', async () => {

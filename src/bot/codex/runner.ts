@@ -565,6 +565,10 @@ export class CodexRunner {
     const fallbackPath = ['/usr/local/bin', '/usr/bin', '/bin'].join(path.delimiter);
     const homeDir = process.env.HOME || os.homedir();
     const tempDir = process.env.TMPDIR || process.env.TMP || process.env.TEMP || os.tmpdir();
+    const codexHome = process.env.CODEX_HOME || path.join(homeDir, '.codex');
+
+    fs.mkdirSync(tempDir, { recursive: true });
+    fs.mkdirSync(codexHome, { recursive: true });
 
     const env: NodeJS.ProcessEnv = {
       PATH: process.env.PATH || fallbackPath,
@@ -576,7 +580,7 @@ export class CodexRunner {
       OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
       OPENAI_ORG_ID: process.env.OPENAI_ORG_ID,
       OPENAI_PROJECT: process.env.OPENAI_PROJECT,
-      CODEX_HOME: process.env.CODEX_HOME || path.join(homeDir, '.codex'),
+      CODEX_HOME: codexHome,
       CI: process.env.CI,
       GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
       NO_COLOR: process.env.NO_COLOR ?? '1',
