@@ -51678,6 +51678,12 @@ const client_1 = __nccwpck_require__(5650);
 const manager_1 = __nccwpck_require__(2881);
 const parser_1 = __nccwpck_require__(5392);
 const state_machine_1 = __nccwpck_require__(1290);
+class MissingPlanError extends Error {
+    constructor() {
+        super('Cannot start implementation because no implementation plan exists yet.');
+        this.name = 'MissingPlanError';
+    }
+}
 class BotController {
     octokit;
     ctx;
@@ -51817,13 +51823,17 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
     }
     // 5. IMPLEMENTATION
     async handleImplementation(payload, config) {
+        const hasPlan = await this.hasImplementationPlan(payload.number);
+        if (!hasPlan) {
+            throw new MissingPlanError();
+        }
         await this.postStatus(payload.number, "Executing local implementation...");
         const issueData = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: payload.number });
         const agent = new client_1.LLMClient();
         // For Implementation, we read the entire code via the Native Workspace FileSystem
         const codeOperations = await agent.generateCode(issueData.data.title, issueData.data.body);
         const git = new manager_1.GitManager(process.env.GITHUB_TOKEN || '');
-        const branchName = `ai-implementation-${payload.number}-${Date.now()}`;
+        const branchName = this.buildImplementationBranchName(payload.number, issueData.data.title || '');
         // Git checkouts locally
         await git.checkoutNewBranch(branchName);
         await git.applyFileSystemChanges(codeOperations);
@@ -51866,8 +51876,34 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
         }
         await this.octokit.rest.issues.addLabels({ ...this.ctx, issue_number: issueNumber, labels: [newLabel] });
     }
+    async hasImplementationPlan(issueNumber) {
+        const comments = await this.octokit.rest.issues.listComments({
+            ...this.ctx,
+            issue_number: issueNumber,
+            per_page: 100
+        });
+        return comments.data.some((comment) => {
+            const body = typeof comment.body === 'string' ? comment.body : '';
+            return body.startsWith('**Implementation Plan**');
+        });
+    }
+    buildImplementationBranchName(issueNumber, issueTitle) {
+        const slug = issueTitle
+            .toLowerCase()
+            .normalize('NFKD')
+            .replace(/[^\w\s-]/g, '')
+            .trim()
+            .replace(/[\s_]+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '')
+            .slice(0, 48);
+        return `codex/issue-${issueNumber}-${slug || 'implementation'}`;
+    }
     formatSystemError(error) {
         const message = error.message || 'Unknown error';
+        if (error instanceof MissingPlanError) {
+            return '🤖 **Workflow Error**\n\nI cannot start implementation yet because this issue does not have an approved implementation plan. Please run `ready for planning` first and review the generated plan before trying `ready for implementation` again.';
+        }
         const guidance = message.includes('GitHub Actions is not permitted to create or approve pull requests')
             ? '\n\nGitHub is rejecting PR creation from the workflow token. Enable the repository setting `Allow GitHub Actions to create and approve pull requests` under `Settings -> Actions -> General -> Workflow permissions`, then rerun the command.'
             : '\n\nThe LLM Controller encountered a critical failure. See Action Logs for details.';
@@ -52089,7 +52125,7 @@ class LLMClient {
     }
     async generateCode(title, body) {
         const sys = this.gatherSystemContext();
-        const prompt = `\n\n${sys}\n\n=== TASK: CODE GENERATION ===\nYou are an Engineer writing code to implement an issue/fix. Do not write markdown blocks.\nIssue: ${title}\nInstructions: ${body}\n\nReturn EXACTLY a JSON array: [{ path: string, content: string }] (no markdown wrapping).`;
+        const prompt = `${sys}\n\n${(0, prompts_1.generateCodePrompt)(title, body)}`;
         return this.askJSON(prompt);
     }
     async ask(prompt, agentConf = 'openai', modelConf = 'strong') {
@@ -52119,12 +52155,98 @@ class LLMClient {
     }
     async askJSON(prompt, agentConf = 'openai', modelConf = 'strong') {
         const raw = await this.ask(prompt, agentConf, modelConf);
-        try {
-            return JSON.parse(raw);
+        const parsed = this.tryParseJSON(raw);
+        if (parsed !== null) {
+            return parsed;
         }
-        catch (e) {
-            throw new Error(`LLM output was not valid JSON. Response excerpt: ${raw.slice(0, 100)}`);
+        const repaired = await this.tryRepairJSON(raw, agentConf, modelConf);
+        if (repaired !== null) {
+            return repaired;
         }
+        throw new Error(`LLM output was not valid JSON. Response excerpt: ${raw.slice(0, 100)}`);
+    }
+    async tryRepairJSON(raw, agentConf, modelConf) {
+        const repairPrompt = `The following text was intended to be valid JSON but failed to parse.
+Return ONLY valid JSON.
+Do not add explanations.
+Do not change the structure or meaning.
+Escape all embedded newlines and quotes correctly.
+
+Broken JSON:
+${raw}`;
+        const repairedRaw = await this.ask(repairPrompt, agentConf, modelConf);
+        return this.tryParseJSON(repairedRaw);
+    }
+    tryParseJSON(raw) {
+        const candidates = [
+            raw,
+            this.extractJSONCandidate(raw),
+            this.sanitizeJSONStringLiterals(raw),
+            this.sanitizeJSONStringLiterals(this.extractJSONCandidate(raw)),
+        ].filter((candidate) => Boolean(candidate));
+        for (const candidate of candidates) {
+            try {
+                return JSON.parse(candidate);
+            }
+            catch {
+                // try next candidate
+            }
+        }
+        return null;
+    }
+    extractJSONCandidate(raw) {
+        const arrayStart = raw.indexOf('[');
+        const objectStart = raw.indexOf('{');
+        const starts = [arrayStart, objectStart].filter((index) => index >= 0);
+        if (starts.length === 0) {
+            return raw;
+        }
+        const start = Math.min(...starts);
+        const arrayEnd = raw.lastIndexOf(']');
+        const objectEnd = raw.lastIndexOf('}');
+        const end = Math.max(arrayEnd, objectEnd);
+        if (end <= start) {
+            return raw.slice(start);
+        }
+        return raw.slice(start, end + 1);
+    }
+    sanitizeJSONStringLiterals(raw) {
+        let sanitized = '';
+        let inString = false;
+        let escaping = false;
+        for (const char of raw) {
+            if (escaping) {
+                sanitized += char;
+                escaping = false;
+                continue;
+            }
+            if (char === '\\') {
+                sanitized += char;
+                escaping = true;
+                continue;
+            }
+            if (char === '"') {
+                sanitized += char;
+                inString = !inString;
+                continue;
+            }
+            if (inString) {
+                if (char === '\n') {
+                    sanitized += '\\n';
+                    continue;
+                }
+                if (char === '\r') {
+                    sanitized += '\\r';
+                    continue;
+                }
+                if (char === '\t') {
+                    sanitized += '\\t';
+                    continue;
+                }
+            }
+            sanitized += char;
+        }
+        return sanitized;
     }
 }
 exports.LLMClient = LLMClient;
@@ -52448,6 +52570,10 @@ async function main() {
             const comment = github.context.payload.comment;
             if (!issue || !comment)
                 return;
+            if (comment.user?.type === 'Bot') {
+                core.info('[Action] Ignoring bot-authored comment event.');
+                return;
+            }
             const body = comment.body;
             const author = comment.user.login;
             const number = issue.number;
