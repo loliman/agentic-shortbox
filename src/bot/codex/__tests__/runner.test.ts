@@ -62,7 +62,18 @@ describe('CodexRunner', () => {
     expect(result).toEqual({ action: 'plan', content: '# Plan' });
     expect(spawnSync).toHaveBeenCalledWith(
       expect.stringContaining('node_modules/.bin/codex'),
-      expect.arrayContaining(['exec', '-', '--output-last-message', '/tmp/codex-runner-123/output.json', '--model', 'codex-mini-latest']),
+      expect.arrayContaining([
+        'exec',
+        '-',
+        '-c',
+        'base_url="https://adesso-ai-hub.3asabc.de/v1"',
+        '-c',
+        'preferred_auth_method="apikey"',
+        '--output-last-message',
+        '/tmp/codex-runner-123/output.json',
+        '--model',
+        'codex-mini-latest'
+      ]),
       expect.objectContaining({
         cwd: process.cwd(),
         env: expect.objectContaining({
@@ -136,7 +147,15 @@ describe('CodexRunner', () => {
 
     expect(spawnSync).toHaveBeenCalledWith(
       process.execPath,
-      expect.arrayContaining([expect.stringContaining('node_modules/@openai/codex/bin/codex.js'), 'exec', '-']),
+      expect.arrayContaining([
+        expect.stringContaining('node_modules/@openai/codex/bin/codex.js'),
+        'exec',
+        '-',
+        '-c',
+        'base_url="https://adesso-ai-hub.3asabc.de/v1"',
+        '-c',
+        'preferred_auth_method="apikey"',
+      ]),
       expect.any(Object)
     );
   });
