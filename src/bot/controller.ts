@@ -78,6 +78,10 @@ export class BotController {
     
     // Parse generic action commands
     if (!command) return core.info('[Bot] No AI command detected in comment.');
+    if (payload.isPR) {
+      core.info('[Bot] Ignoring non-review PR discussion command.');
+      return;
+    }
     
     // State Checks (Guard)
     const currentState = extractCurrentState(payload.labels);
@@ -344,7 +348,7 @@ export class BotController {
       [
         '**Review flow here:**',
         '1. Leave inline review comments or general PR feedback.',
-        '2. Comment `ready for rework` on the PR when the feedback is complete.',
+        '2. Comment `ready for rework` inside the relevant review conversation when the feedback is complete.',
         '3. I will collect the review feedback, changed files, and diff, then apply only that rework.',
       ].join('\n'),
       ['**Example:**', '`ready for rework`'].join('\n'),

@@ -14,7 +14,7 @@ If the AI makes a mistake during implementation, developers can leave review fee
 Implements Section 9.3 (Review and Rework) and Section 9.4 (Completion) of `AI_FIRST_AGENT_SPEC.md`.
 
 ## User Scenarios
-1. **Given** an open PR made by the AI, **When** a human leaves review feedback and then comments `ready for rework`, **Then** the AI collects that PR feedback and amends its commit accordingly.
+1. **Given** an open PR made by the AI, **When** a human leaves review feedback and then comments `ready for rework` in the review conversation, **Then** the AI collects that PR feedback and amends its commit accordingly.
 2. **Given** a human merges the PR, **Then** the AI calculates the final diff, posts a summary to the parent issue, and closes the issue.
 
 ## Affected Areas

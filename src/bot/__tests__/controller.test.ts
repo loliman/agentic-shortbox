@@ -279,5 +279,14 @@ describe('BotController', () => {
       expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('existing-branch');
       expect(mockGit.commitAndPush).toHaveBeenCalledWith('PR Rework: address review feedback', 'existing-branch');
     });
+
+    it('ignores regular PR discussion commands', async () => {
+      const payload = { number: 99, author: 'bob', body: 'ready for planning', labels: [], isPR: true };
+
+      await controller.handleCommand(payload);
+
+      expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalled();
+      expect(core.info).toHaveBeenCalledWith('[Bot] Ignoring non-review PR discussion command.');
+    });
   });
 });
