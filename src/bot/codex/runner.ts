@@ -49,14 +49,22 @@ export class CodexRunner {
         featureSpec: body || 'No issue body provided.',
         commandInstruction: [
           'Split this parent issue into 3 to 5 isolated child features.',
+          'You must always return at least 3 child features when the parent issue describes a software change request.',
+          'Do not return an empty array.',
+          'If the parent issue feels too small to split cleanly, decompose it into setup, implementation, and verification oriented child features anyway.',
+          'Each child feature must be specific, reviewable, and narrow enough to become its own GitHub issue.',
           'For each child feature, produce a GitHub issue title and a markdown body that follows `specs/templates/feature-spec.md` exactly.',
+          'Every `specMarkdown` must be a complete filled-out spec, not a template stub and not a summary.',
           'Do not implement code and do not modify repository files.',
         ].join('\n'),
         outputContract: [
           'Return a JSON array.',
+          'The array must contain 3 to 5 items.',
+          'An empty array is invalid.',
           'Each item must include:',
           '- `title`: string',
           '- `specMarkdown`: string following `specs/templates/feature-spec.md`',
+          'Return only valid JSON with no markdown fences and no commentary.',
         ].join('\n'),
       },
       {
@@ -532,17 +540,21 @@ export class CodexRunner {
   }
 
   private buildCodexEnv(): NodeJS.ProcessEnv {
+    const fallbackPath = ['/usr/local/bin', '/usr/bin', '/bin'].join(path.delimiter);
+    const homeDir = process.env.HOME || os.homedir();
+    const tempDir = process.env.TMPDIR || process.env.TMP || process.env.TEMP || os.tmpdir();
+
     const env: NodeJS.ProcessEnv = {
-      PATH: process.env.PATH,
-      HOME: process.env.HOME,
-      TMPDIR: process.env.TMPDIR,
-      TMP: process.env.TMP,
-      TEMP: process.env.TEMP,
+      PATH: process.env.PATH || fallbackPath,
+      HOME: homeDir,
+      TMPDIR: process.env.TMPDIR || tempDir,
+      TMP: process.env.TMP || tempDir,
+      TEMP: process.env.TEMP || tempDir,
       OPENAI_API_KEY: process.env.OPENAI_API_KEY,
       OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
       OPENAI_ORG_ID: process.env.OPENAI_ORG_ID,
       OPENAI_PROJECT: process.env.OPENAI_PROJECT,
-      CODEX_HOME: process.env.CODEX_HOME,
+      CODEX_HOME: process.env.CODEX_HOME || path.join(homeDir, '.codex'),
       CI: process.env.CI,
       GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
       NO_COLOR: process.env.NO_COLOR ?? '1',

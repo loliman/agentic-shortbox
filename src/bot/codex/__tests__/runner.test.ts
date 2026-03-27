@@ -19,6 +19,7 @@ describe('CodexRunner', () => {
     jest.clearAllMocks();
     process.env = { ...originalEnv, OPENAI_API_KEY: 'test-key', PATH: '/usr/bin' };
     (os.tmpdir as jest.Mock).mockReturnValue('/tmp');
+    (os.homedir as jest.Mock).mockReturnValue('/home/tester');
     (fs.mkdtempSync as jest.Mock).mockReturnValue('/tmp/codex-runner-123');
     (fs.writeFileSync as jest.Mock).mockImplementation(() => undefined);
     (fs.rmSync as jest.Mock).mockImplementation(() => undefined);
@@ -34,6 +35,20 @@ describe('CodexRunner', () => {
 
     const runner = new CodexRunner();
     await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(MissingConfigurationError);
+  });
+
+  it('uses a stricter specification prompt for epic splitting', async () => {
+    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
+    (fs.readFileSync as jest.Mock).mockReturnValue('[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"}]');
+
+    const runner = new CodexRunner();
+    await runner.generateEpicSplit('Epic', 'Spec');
+
+    const spawnCall = (spawnSync as jest.Mock).mock.calls[0];
+    expect(spawnCall[2].input).toContain('You must always return at least 3 child features');
+    expect(spawnCall[2].input).toContain('Do not return an empty array.');
+    expect(spawnCall[2].input).toContain('The array must contain 3 to 5 items.');
+    expect(spawnCall[2].input).toContain('Return only valid JSON with no markdown fences and no commentary.');
   });
 
   it('uses Codex CLI for structured planning prompts', async () => {
@@ -160,6 +175,32 @@ describe('CodexRunner', () => {
       action: 'plan',
       content: '# Plan',
     });
+  });
+
+  it('fills in sensible environment defaults for the Codex subprocess', async () => {
+    process.env = { OPENAI_API_KEY: 'test-key' } as NodeJS.ProcessEnv;
+    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
+    (fs.readFileSync as jest.Mock).mockReturnValue('{"action":"plan","content":"# Plan"}');
+
+    const runner = new CodexRunner();
+    await runner.generateImplementationPlan('Feature', 'Body', false, 'fast');
+
+    expect(spawnSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          OPENAI_API_KEY: 'test-key',
+          PATH: expect.stringContaining('/usr/bin'),
+          HOME: '/home/tester',
+          TMPDIR: '/tmp',
+          TMP: '/tmp',
+          TEMP: '/tmp',
+          CODEX_HOME: '/home/tester/.codex',
+          NO_COLOR: '1',
+        }),
+      })
+    );
   });
 
   it('rejects empty arrays for epic split results', async () => {
