@@ -75,6 +75,7 @@ describe('CodexRunner', () => {
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_API_KEY length: 8');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: no');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_BASE_URL: https://adesso-ai-hub.3asabc.de/v1');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Resolved model: gpt-5-mini');
   });
 
   it('asks Codex to gather repository context itself for implementation', async () => {
@@ -219,6 +220,12 @@ describe('CodexRunner', () => {
     await expect(runner.generateImplementationPlan('Feature', 'Body', false, 'fast')).rejects.toThrow(
       'Codex returned a non-JSON final message.'
     );
+  });
+
+  it('maps configured model tiers to allowed Adesso model ids', () => {
+    const runner = new CodexRunner() as any;
+    expect(runner.resolveModel('fast')).toBe('gpt-5-mini');
+    expect(runner.resolveModel('strong')).toBe('US-gpt-5.3-codex');
   });
 
   it('rejects empty arrays for epic split results', async () => {

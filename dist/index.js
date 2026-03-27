@@ -32772,6 +32772,7 @@ class CodexRunner {
         core.info(`[CodexRunner] OPENAI_API_KEY length: ${codexEnv.OPENAI_API_KEY?.length ?? 0}`);
         core.info(`[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: ${codexEnv.OPENAI_API_KEY?.startsWith('sk-') ? 'yes' : 'no'}`);
         core.info(`[CodexRunner] OPENAI_BASE_URL: ${codexEnv.OPENAI_BASE_URL ?? '(not set)'}`);
+        core.info(`[CodexRunner] Resolved model: ${this.resolveModel(modelConf)}`);
         core.info('[CodexRunner] Prompt begin');
         core.info(prompt);
         core.info('[CodexRunner] Prompt end');
@@ -33034,7 +33035,7 @@ class CodexRunner {
         return Object.fromEntries(Object.entries(env).filter(([, value]) => typeof value === 'string' && value.length > 0));
     }
     resolveModel(modelConf) {
-        return modelConf === 'fast' ? 'codex-mini-latest' : 'gpt-5.3-codex';
+        return modelConf === 'fast' ? 'gpt-5-mini' : 'US-gpt-5.3-codex';
     }
 }
 exports.CodexRunner = CodexRunner;

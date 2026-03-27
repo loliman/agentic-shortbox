@@ -235,6 +235,7 @@ export class CodexRunner {
       `[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: ${codexEnv.OPENAI_API_KEY?.startsWith('sk-') ? 'yes' : 'no'}`
     );
     core.info(`[CodexRunner] OPENAI_BASE_URL: ${codexEnv.OPENAI_BASE_URL ?? '(not set)'}`);
+    core.info(`[CodexRunner] Resolved model: ${this.resolveModel(modelConf)}`);
     core.info('[CodexRunner] Prompt begin');
     core.info(prompt);
     core.info('[CodexRunner] Prompt end');
@@ -556,6 +557,6 @@ export class CodexRunner {
   }
 
   private resolveModel(modelConf: string): string {
-    return modelConf === 'fast' ? 'codex-mini-latest' : 'gpt-5.3-codex';
+    return modelConf === 'fast' ? 'gpt-5-mini' : 'US-gpt-5.3-codex';
   }
 }
