@@ -18,7 +18,7 @@ describe("Test the Controller Error Messages", () => {
     mockController = new MockController();
   });
 
-  it("SHOULD THROW THE CORRECT ERROR MESSAGE", () => {
+  it("should throw the correct error message", () => {
     const errorMessage = "Test Error Message";
 
     expect(() => {
