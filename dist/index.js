@@ -32884,12 +32884,16 @@ class CodexRunner {
     parseStructuredOutput(raw, schema, stdout, stderr) {
         const directCandidate = this.extractJsonCandidate(raw, schema);
         if (directCandidate) {
+            core.info('[CodexRunner] Structured output source: output-last-message');
+            this.logStructuredCandidate(directCandidate);
             return this.validateStructuredOutput(JSON.parse(directCandidate), schema);
         }
         const fallbackCandidate = this.extractJsonCandidate([stdout, stderr]
             .filter((chunk) => typeof chunk === 'string' && chunk.trim().length > 0)
             .join('\n'), schema);
         if (fallbackCandidate) {
+            core.info('[CodexRunner] Structured output source: stdout/stderr fallback');
+            this.logStructuredCandidate(fallbackCandidate);
             return this.validateStructuredOutput(JSON.parse(fallbackCandidate), schema);
         }
         const schemaSummary = JSON.stringify(schema, null, 2);
@@ -32900,6 +32904,11 @@ class CodexRunner {
             'Actual final message:',
             raw,
         ].join('\n'));
+    }
+    logStructuredCandidate(candidate) {
+        core.info('[CodexRunner] Structured output candidate begin');
+        core.info(candidate);
+        core.info('[CodexRunner] Structured output candidate end');
     }
     extractJsonCandidate(content, schema) {
         if (!content) {

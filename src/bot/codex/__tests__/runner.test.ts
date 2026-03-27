@@ -75,6 +75,7 @@ describe('CodexRunner', () => {
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Prompt begin');
     expect(core.info).toHaveBeenCalledWith(expect.stringContaining('Command: ready for planning'));
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Prompt end');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Structured output source: output-last-message');
   });
 
   it('asks Codex to gather repository context itself for implementation', async () => {
@@ -168,6 +169,7 @@ describe('CodexRunner', () => {
     await expect(runner.generateEpicSplit('Epic', 'Spec')).resolves.toEqual([
       { title: 'Spec 1', specMarkdown: '# Feature: Spec 1' },
     ]);
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Structured output source: stdout/stderr fallback');
   });
 
   it('extracts JSON from fenced output when present', async () => {

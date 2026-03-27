@@ -372,6 +372,8 @@ export class CodexRunner {
   ): T {
     const directCandidate = this.extractJsonCandidate(raw, schema);
     if (directCandidate) {
+      core.info('[CodexRunner] Structured output source: output-last-message');
+      this.logStructuredCandidate(directCandidate);
       return this.validateStructuredOutput<T>(JSON.parse(directCandidate), schema);
     }
 
@@ -383,6 +385,8 @@ export class CodexRunner {
     );
 
     if (fallbackCandidate) {
+      core.info('[CodexRunner] Structured output source: stdout/stderr fallback');
+      this.logStructuredCandidate(fallbackCandidate);
       return this.validateStructuredOutput<T>(JSON.parse(fallbackCandidate), schema);
     }
 
@@ -396,6 +400,12 @@ export class CodexRunner {
         raw,
       ].join('\n')
     );
+  }
+
+  private logStructuredCandidate(candidate: string): void {
+    core.info('[CodexRunner] Structured output candidate begin');
+    core.info(candidate);
+    core.info('[CodexRunner] Structured output candidate end');
   }
 
   private extractJsonCandidate(content?: string | null, schema?: Record<string, unknown>): string | null {
