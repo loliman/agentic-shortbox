@@ -32598,7 +32598,7 @@ exports.CodexRunner = exports.MissingConfigurationError = void 0;
 const fs_1 = __importDefault(__nccwpck_require__(9896));
 const os_1 = __importDefault(__nccwpck_require__(857));
 const path_1 = __importDefault(__nccwpck_require__(6928));
-const child_process_1 = __nccwpck_require__(5317);
+const url_1 = __nccwpck_require__(7016);
 const core = __importStar(__nccwpck_require__(7484));
 const DEFAULT_OPENAI_BASE_URL = 'https://adesso-ai-hub.3asabc.de/v1';
 class MissingConfigurationError extends Error {
@@ -32766,11 +32766,8 @@ class CodexRunner {
             throw new MissingConfigurationError('Codex requires `OPENAI_API_KEY`, but no OpenAI API key is configured for this repository.');
         }
         const prompt = this.buildPrompt(task);
-        const codexCommand = this.resolveCodexCommand();
         const codexEnv = this.buildCodexEnv();
-        const tempDir = fs_1.default.mkdtempSync(path_1.default.join(os_1.default.tmpdir(), 'codex-runner-'));
-        const outputPath = path_1.default.join(tempDir, 'output.json');
-        core.info(`[CodexRunner] Launching Codex CLI via ${codexCommand.executable}`);
+        core.info('[CodexRunner] Launching Codex via @openai/codex-sdk');
         core.info(`[CodexRunner] OPENAI_API_KEY present: ${codexEnv.OPENAI_API_KEY ? 'yes' : 'no'}`);
         core.info(`[CodexRunner] OPENAI_API_KEY length: ${codexEnv.OPENAI_API_KEY?.length ?? 0}`);
         core.info(`[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: ${codexEnv.OPENAI_API_KEY?.startsWith('sk-') ? 'yes' : 'no'}`);
@@ -32778,54 +32775,45 @@ class CodexRunner {
         core.info('[CodexRunner] Prompt begin');
         core.info(prompt);
         core.info('[CodexRunner] Prompt end');
-        const result = (0, child_process_1.spawnSync)(codexCommand.executable, [
-            ...codexCommand.args,
-            'exec',
-            '-',
-            '-c',
-            `base_url=${JSON.stringify(codexEnv.OPENAI_BASE_URL)}`,
-            '-c',
-            'preferred_auth_method="apikey"',
-            '--full-auto',
-            '--sandbox',
-            'workspace-write',
-            '--color',
-            'never',
-            '--output-last-message',
-            outputPath,
-            '--model',
-            this.resolveModel(modelConf),
-        ], {
-            cwd: process.cwd(),
-            env: codexEnv,
-            input: prompt,
-            encoding: 'utf8',
-        });
         try {
-            if (result.error) {
-                throw new Error(`Failed to start Codex CLI: ${result.error.message}`);
-            }
-            if (result.status !== 0) {
-                this.logCodexStreams(result.stdout, result.stderr);
-                throw new Error(this.formatCodexFailure(result.stderr, result.stdout));
-            }
-            if (!fs_1.default.existsSync(outputPath)) {
-                this.logCodexStreams(result.stdout, result.stderr);
-                throw new Error('Codex finished without writing the expected output-last-message file.');
-            }
-            const raw = fs_1.default.readFileSync(outputPath, 'utf8').trim();
+            const turn = await this.executeStructuredTurn(prompt, schema, modelConf, codexEnv);
+            const raw = turn.finalResponse.trim();
+            core.info(`[CodexRunner] Completed turn items: ${turn.items.length}`);
             try {
-                return this.parseStructuredOutput(raw, schema, result.stdout, result.stderr);
+                return this.parseStructuredOutput(raw, schema);
             }
             catch (error) {
                 this.logRawOutputFile(raw);
-                this.logCodexStreams(result.stdout, result.stderr);
                 throw error;
             }
         }
-        finally {
-            fs_1.default.rmSync(tempDir, { recursive: true, force: true });
+        catch (error) {
+            throw new Error(error?.message || 'Codex SDK execution failed.');
         }
+    }
+    async executeStructuredTurn(prompt, schema, modelConf, codexEnv) {
+        const sdkModulePath = (0, url_1.pathToFileURL)(path_1.default.resolve(process.cwd(), 'node_modules/@openai/codex-sdk/dist/index.js')).href;
+        const { Codex } = await Promise.resolve(`${sdkModulePath}`).then(s => __importStar(require(s)));
+        const codex = new Codex({
+            apiKey: codexEnv.OPENAI_API_KEY,
+            baseUrl: codexEnv.OPENAI_BASE_URL,
+            env: codexEnv,
+            config: {
+                preferred_auth_method: 'apikey',
+            },
+        });
+        const thread = codex.startThread({
+            workingDirectory: process.cwd(),
+            model: this.resolveModel(modelConf),
+            sandboxMode: 'workspace-write',
+            approvalPolicy: 'never',
+            modelReasoningEffort: 'medium',
+        });
+        const turn = await thread.run(prompt, { outputSchema: schema });
+        return {
+            finalResponse: turn.finalResponse,
+            items: turn.items,
+        };
     }
     buildPrompt(task) {
         return [
@@ -32852,64 +32840,12 @@ class CodexRunner {
             'Return only the final structured output that matches the required schema.',
         ].join('\n');
     }
-    resolveCodexCommand() {
-        const directBinary = path_1.default.resolve(process.cwd(), 'node_modules/.bin/codex');
-        if (fs_1.default.existsSync(directBinary)) {
-            return {
-                executable: directBinary,
-                args: [],
-            };
-        }
-        const packagedEntrypoint = path_1.default.resolve(process.cwd(), 'node_modules/@openai/codex/bin/codex.js');
-        if (fs_1.default.existsSync(packagedEntrypoint)) {
-            return {
-                executable: process.execPath,
-                args: [packagedEntrypoint],
-            };
-        }
-        throw new Error('Codex CLI is not available in this checkout. Ensure project dependencies are installed and `@openai/codex` is present before running the action.');
-    }
-    formatCodexFailure(stderr, stdout) {
-        const combined = [stderr, stdout]
-            .filter((chunk) => typeof chunk === 'string' && chunk.trim().length > 0)
-            .join('\n')
-            .trim();
-        if (!combined) {
-            return 'Codex execution failed.';
-        }
-        const lines = combined
-            .split('\n')
-            .map((line) => line.trimEnd())
-            .filter((line) => line.trim().length > 0);
-        const tail = lines.slice(-20).join('\n').trim();
-        return tail || 'Codex execution failed.';
-    }
-    logCodexStreams(stdout, stderr) {
-        if (typeof stdout === 'string' && stdout.trim().length > 0) {
-            core.info('[CodexRunner] Codex stdout begin');
-            core.info(stdout);
-            core.info('[CodexRunner] Codex stdout end');
-        }
-        if (typeof stderr === 'string' && stderr.trim().length > 0) {
-            core.info('[CodexRunner] Codex stderr begin');
-            core.info(stderr);
-            core.info('[CodexRunner] Codex stderr end');
-        }
-    }
-    parseStructuredOutput(raw, schema, stdout, stderr) {
+    parseStructuredOutput(raw, schema) {
         const directCandidate = this.extractJsonCandidate(raw, schema, true);
         if (directCandidate) {
             core.info('[CodexRunner] Structured output source: output-last-message');
             this.logStructuredCandidate(directCandidate);
             return this.validateStructuredOutput(JSON.parse(directCandidate), schema);
-        }
-        const fallbackCandidate = this.extractJsonCandidate([stdout, stderr]
-            .filter((chunk) => typeof chunk === 'string' && chunk.trim().length > 0)
-            .join('\n'), schema, false);
-        if (fallbackCandidate) {
-            core.info('[CodexRunner] Structured output source: stdout/stderr fallback');
-            this.logStructuredCandidate(fallbackCandidate);
-            return this.validateStructuredOutput(JSON.parse(fallbackCandidate), schema);
         }
         const schemaSummary = JSON.stringify(schema, null, 2);
         throw new Error([

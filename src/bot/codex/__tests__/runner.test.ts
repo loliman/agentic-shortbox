@@ -1,13 +1,10 @@
 import fs from 'fs';
 import os from 'os';
-import path from 'path';
-import { spawnSync } from 'child_process';
 import * as core from '@actions/core';
 import { CodexRunner, MissingConfigurationError } from '../runner';
 
 jest.mock('fs');
 jest.mock('os');
-jest.mock('child_process');
 jest.mock('@actions/core', () => ({
   info: jest.fn(),
 }));
@@ -20,11 +17,7 @@ describe('CodexRunner', () => {
     process.env = { ...originalEnv, OPENAI_API_KEY: 'test-key', PATH: '/usr/bin' };
     (os.tmpdir as jest.Mock).mockReturnValue('/tmp');
     (os.homedir as jest.Mock).mockReturnValue('/home/tester');
-    (fs.mkdtempSync as jest.Mock).mockReturnValue('/tmp/codex-runner-123');
-    (fs.writeFileSync as jest.Mock).mockImplementation(() => undefined);
     (fs.mkdirSync as jest.Mock).mockImplementation(() => undefined);
-    (fs.rmSync as jest.Mock).mockImplementation(() => undefined);
-    (fs.existsSync as jest.Mock).mockReturnValue(true);
   });
 
   afterAll(() => {
@@ -39,48 +32,40 @@ describe('CodexRunner', () => {
   });
 
   it('uses a stricter specification prompt for epic splitting', async () => {
-    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
-    (fs.readFileSync as jest.Mock).mockReturnValue('[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"}]');
-
     const runner = new CodexRunner();
+    const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"}]',
+      items: [],
+    });
     await runner.generateEpicSplit('Epic', 'Spec');
 
-    const spawnCall = (spawnSync as jest.Mock).mock.calls[0];
-    expect(spawnCall[2].input).toContain('You must always return at least 3 child features');
-    expect(spawnCall[2].input).toContain('Do not return an empty array.');
-    expect(spawnCall[2].input).toContain('The array must contain 3 to 5 items.');
-    expect(spawnCall[2].input).toContain('Return only valid JSON with no markdown fences and no commentary.');
+    expect(executeSpy).toHaveBeenCalledWith(
+      expect.stringContaining('You must always return at least 3 child features'),
+      expect.any(Object),
+      'strong',
+      expect.any(Object)
+    );
+    expect(executeSpy.mock.calls[0][0]).toContain('Do not return an empty array.');
+    expect(executeSpy.mock.calls[0][0]).toContain('The array must contain 3 to 5 items.');
+    expect(executeSpy.mock.calls[0][0]).toContain('Return only valid JSON with no markdown fences and no commentary.');
   });
 
   it('uses Codex CLI for structured planning prompts', async () => {
-    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
-    (fs.readFileSync as jest.Mock).mockReturnValue('{"action":"plan","content":"# Plan"}');
-
     const runner = new CodexRunner();
+    const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '{"action":"plan","content":"# Plan"}',
+      items: [{ type: 'agent_message' }],
+    });
     const result = await runner.generateImplementationPlan('Feature', 'Body', false, 'fast');
 
     expect(result).toEqual({ action: 'plan', content: '# Plan' });
-    expect(spawnSync).toHaveBeenCalledWith(
-      expect.stringContaining('node_modules/.bin/codex'),
-      expect.arrayContaining([
-        'exec',
-        '-',
-        '-c',
-        'base_url="https://adesso-ai-hub.3asabc.de/v1"',
-        '-c',
-        'preferred_auth_method="apikey"',
-        '--output-last-message',
-        '/tmp/codex-runner-123/output.json',
-        '--model',
-        'codex-mini-latest'
-      ]),
+    expect(executeSpy).toHaveBeenCalledWith(
+      expect.stringContaining('You must read and obey `AGENTS.md`'),
+      expect.any(Object),
+      'fast',
       expect.objectContaining({
-        cwd: process.cwd(),
-        env: expect.objectContaining({
-          OPENAI_API_KEY: 'test-key',
-          PATH: '/usr/bin',
-        }),
-        input: expect.stringContaining('You must read and obey `AGENTS.md`'),
+        OPENAI_API_KEY: 'test-key',
+        PATH: '/usr/bin',
       })
     );
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Prompt begin');
@@ -93,87 +78,34 @@ describe('CodexRunner', () => {
   });
 
   it('asks Codex to gather repository context itself for implementation', async () => {
-    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
-    (fs.readFileSync as jest.Mock).mockReturnValue('{"summary":"Done","changedFiles":["src/foo.ts"]}');
-
     const runner = new CodexRunner();
+    const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '{"summary":"Done","changedFiles":["src/foo.ts"]}',
+      items: [],
+    });
     const result = await runner.implementFeature('Feature', 'Spec body', '# Plan', 'strong');
 
     expect(result).toEqual({ summary: 'Done', changedFiles: ['src/foo.ts'] });
-    const spawnCall = (spawnSync as jest.Mock).mock.calls[0];
-    expect(spawnCall[2].input).toContain('Gather the context you need from the local repository');
-    expect(spawnCall[2].input).toContain('=== FEATURE SPEC ===');
-    expect(spawnCall[2].input).toContain('=== IMPLEMENTATION PLAN ===');
-    expect(spawnCall[2].input).toContain('# Plan');
-    expect(spawnCall[2].input).toContain('Implement the feature directly in the local repository');
+    expect(executeSpy.mock.calls[0][0]).toContain('Gather the context you need from the local repository');
+    expect(executeSpy.mock.calls[0][0]).toContain('=== FEATURE SPEC ===');
+    expect(executeSpy.mock.calls[0][0]).toContain('=== IMPLEMENTATION PLAN ===');
+    expect(executeSpy.mock.calls[0][0]).toContain('# Plan');
+    expect(executeSpy.mock.calls[0][0]).toContain('Implement the feature directly in the local repository');
   });
 
-  it('surfaces Codex execution failures', async () => {
-    (spawnSync as jest.Mock).mockReturnValue({ status: 1, stdout: '', stderr: 'codex failed hard' });
-
+  it('surfaces Codex SDK failures', async () => {
     const runner = new CodexRunner();
+    jest.spyOn(runner as any, 'executeStructuredTurn').mockRejectedValue(new Error('codex failed hard'));
+
     await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow('codex failed hard');
-    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Codex stderr begin');
-    expect(core.info).toHaveBeenCalledWith('codex failed hard');
-    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Codex stderr end');
-  });
-
-  it('surfaces only the tail of long Codex logs', async () => {
-    const lines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`).join('\n');
-    (spawnSync as jest.Mock).mockReturnValue({ status: 1, stdout: lines, stderr: '' });
-
-    const runner = new CodexRunner();
-    await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
-      Array.from({ length: 20 }, (_, index) => `line ${index + 11}`).join('\n')
-    );
-  });
-
-  it('surfaces Codex spawn failures with the underlying error message', async () => {
-    (spawnSync as jest.Mock).mockReturnValue({ status: null, stdout: '', stderr: '', error: new Error('spawn ENOENT') });
-
-    const runner = new CodexRunner();
-    await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow('Failed to start Codex CLI: spawn ENOENT');
-  });
-
-  it('falls back to the packaged codex.js entrypoint when .bin/codex is unavailable', async () => {
-    (fs.existsSync as jest.Mock)
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
-    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
-    (fs.readFileSync as jest.Mock).mockReturnValue('{"action":"plan","content":"# Plan"}');
-
-    const runner = new CodexRunner();
-    await runner.generateImplementationPlan('Feature', 'Body', false, 'fast');
-
-    expect(spawnSync).toHaveBeenCalledWith(
-      process.execPath,
-      expect.arrayContaining([
-        expect.stringContaining('node_modules/@openai/codex/bin/codex.js'),
-        'exec',
-        '-',
-        '-c',
-        'base_url="https://adesso-ai-hub.3asabc.de/v1"',
-        '-c',
-        'preferred_auth_method="apikey"',
-      ]),
-      expect.any(Object)
-    );
-  });
-
-  it('fails clearly when Codex CLI is not installed in the checkout', async () => {
-    (fs.existsSync as jest.Mock).mockReturnValue(false);
-
-    const runner = new CodexRunner();
-    await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
-      'Codex CLI is not available in this checkout. Ensure project dependencies are installed and `@openai/codex` is present before running the action.'
-    );
   });
 
   it('fails clearly when Codex returns a non-JSON final message', async () => {
-    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
-    (fs.readFileSync as jest.Mock).mockReturnValue('not json');
-
     const runner = new CodexRunner();
+    jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: 'not json',
+      items: [],
+    });
     await expect(runner.generateImplementationPlan('Feature', 'Body', false, 'fast')).rejects.toThrow(
       'Codex returned a non-JSON final message.'
     );
@@ -182,40 +114,23 @@ describe('CodexRunner', () => {
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Raw output-last-message end');
   });
 
-  it('falls back to JSON found in stdout when the final message file is empty', async () => {
-    (spawnSync as jest.Mock).mockReturnValue({
-      status: 0,
-      stdout: '```json\n[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"}]\n```',
-      stderr: '',
-    });
-    (fs.readFileSync as jest.Mock).mockReturnValue('');
-
+  it('accepts fenced JSON from the final response', async () => {
     const runner = new CodexRunner();
+    jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '```json\n[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"}]\n```',
+      items: [],
+    });
     await expect(runner.generateEpicSplit('Epic', 'Spec')).resolves.toEqual([
       { title: 'Spec 1', specMarkdown: '# Feature: Spec 1' },
     ]);
-    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Structured output source: stdout/stderr fallback');
-  });
-
-  it('does not treat incidental bracket output in stdout as structured JSON', async () => {
-    (spawnSync as jest.Mock).mockReturnValue({
-      status: 0,
-      stdout: 'progress output\n[ ]\nmore logs\n',
-      stderr: '',
-    });
-    (fs.readFileSync as jest.Mock).mockReturnValue('');
-
-    const runner = new CodexRunner();
-    await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
-      'Codex returned a non-JSON final message.'
-    );
   });
 
   it('extracts JSON from fenced output when present', async () => {
-    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
-    (fs.readFileSync as jest.Mock).mockReturnValue('```json\n{"action":"plan","content":"# Plan"}\n```');
-
     const runner = new CodexRunner();
+    jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '```json\n{"action":"plan","content":"# Plan"}\n```',
+      items: [],
+    });
     await expect(runner.generateImplementationPlan('Feature', 'Body', false, 'fast')).resolves.toEqual({
       action: 'plan',
       content: '# Plan',
@@ -224,27 +139,27 @@ describe('CodexRunner', () => {
 
   it('fills in sensible environment defaults for the Codex subprocess', async () => {
     process.env = { OPENAI_API_KEY: 'test-key' } as NodeJS.ProcessEnv;
-    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
-    (fs.readFileSync as jest.Mock).mockReturnValue('{"action":"plan","content":"# Plan"}');
-
     const runner = new CodexRunner();
+    const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '{"action":"plan","content":"# Plan"}',
+      items: [],
+    });
     await runner.generateImplementationPlan('Feature', 'Body', false, 'fast');
 
-    expect(spawnSync).toHaveBeenCalledWith(
+    expect(executeSpy).toHaveBeenCalledWith(
       expect.any(String),
-      expect.any(Array),
+      expect.any(Object),
+      'fast',
       expect.objectContaining({
-        env: expect.objectContaining({
-          OPENAI_API_KEY: 'test-key',
-          OPENAI_BASE_URL: 'https://adesso-ai-hub.3asabc.de/v1',
-          PATH: expect.stringContaining('/usr/bin'),
-          HOME: '/home/tester',
-          TMPDIR: '/tmp',
-          TMP: '/tmp',
-          TEMP: '/tmp',
-          CODEX_HOME: '/home/tester/.codex',
-          NO_COLOR: '1',
-        }),
+        OPENAI_API_KEY: 'test-key',
+        OPENAI_BASE_URL: 'https://adesso-ai-hub.3asabc.de/v1',
+        PATH: expect.stringContaining('/usr/bin'),
+        HOME: '/home/tester',
+        TMPDIR: '/tmp',
+        TMP: '/tmp',
+        TEMP: '/tmp',
+        CODEX_HOME: '/home/tester/.codex',
+        NO_COLOR: '1',
       })
     );
     expect(fs.mkdirSync).toHaveBeenCalledWith('/tmp', { recursive: true });
@@ -257,19 +172,19 @@ describe('CodexRunner', () => {
       OPENAI_BASE_URL: 'https://custom.example/v1',
       PATH: '/usr/bin',
     } as NodeJS.ProcessEnv;
-    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
-    (fs.readFileSync as jest.Mock).mockReturnValue('{"action":"plan","content":"# Plan"}');
-
     const runner = new CodexRunner();
+    const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '{"action":"plan","content":"# Plan"}',
+      items: [],
+    });
     await runner.generateImplementationPlan('Feature', 'Body', false, 'fast');
 
-    expect(spawnSync).toHaveBeenCalledWith(
+    expect(executeSpy).toHaveBeenCalledWith(
       expect.any(String),
-      expect.any(Array),
+      expect.any(Object),
+      'fast',
       expect.objectContaining({
-        env: expect.objectContaining({
-          OPENAI_BASE_URL: 'https://custom.example/v1',
-        }),
+        OPENAI_BASE_URL: 'https://custom.example/v1',
       })
     );
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_BASE_URL: https://custom.example/v1');
@@ -277,54 +192,52 @@ describe('CodexRunner', () => {
 
   it('trims the OpenAI API key before passing it to Codex', async () => {
     process.env = { OPENAI_API_KEY: '  sk-test-key  ', PATH: '/usr/bin' } as NodeJS.ProcessEnv;
-    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
-    (fs.readFileSync as jest.Mock).mockReturnValue('{"action":"plan","content":"# Plan"}');
-
     const runner = new CodexRunner();
+    const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '{"action":"plan","content":"# Plan"}',
+      items: [],
+    });
     await runner.generateImplementationPlan('Feature', 'Body', false, 'fast');
 
-    expect(spawnSync).toHaveBeenCalledWith(
+    expect(executeSpy).toHaveBeenCalledWith(
       expect.any(String),
-      expect.any(Array),
+      expect.any(Object),
+      'fast',
       expect.objectContaining({
-        env: expect.objectContaining({
-          OPENAI_API_KEY: 'sk-test-key',
-        }),
+        OPENAI_API_KEY: 'sk-test-key',
       })
     );
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: yes');
   });
 
-  it('fails clearly when Codex does not write the output-last-message file', async () => {
-    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: 'codex ran', stderr: '' });
-    (fs.existsSync as jest.Mock)
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(false);
-
+  it('surfaces empty final responses as non-json failures', async () => {
     const runner = new CodexRunner();
+    jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '',
+      items: [],
+    });
     await expect(runner.generateImplementationPlan('Feature', 'Body', false, 'fast')).rejects.toThrow(
-      'Codex finished without writing the expected output-last-message file.'
+      'Codex returned a non-JSON final message.'
     );
-    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Codex stdout begin');
-    expect(core.info).toHaveBeenCalledWith('codex ran');
-    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Codex stdout end');
   });
 
   it('rejects empty arrays for epic split results', async () => {
-    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
-    (fs.readFileSync as jest.Mock).mockReturnValue('[]');
-
     const runner = new CodexRunner();
+    jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '[]',
+      items: [],
+    });
     await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
       'Codex returned an empty result array.'
     );
   });
 
   it('rejects empty required strings in array items', async () => {
-    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
-    (fs.readFileSync as jest.Mock).mockReturnValue('[{"title":"","specMarkdown":"# Feature: Spec 1"}]');
-
     const runner = new CodexRunner();
+    jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '[{"title":"","specMarkdown":"# Feature: Spec 1"}]',
+      items: [],
+    });
     await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
       'Codex returned an invalid array item: `title` must be a non-empty string.'
     );

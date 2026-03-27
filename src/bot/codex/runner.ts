@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { spawnSync } from 'child_process';
+import { pathToFileURL } from 'url';
 import * as core from '@actions/core';
 
 const DEFAULT_OPENAI_BASE_URL = 'https://adesso-ai-hub.3asabc.de/v1';
@@ -37,9 +37,9 @@ interface CodexTaskContext {
   outputContract: string;
 }
 
-interface CodexCliCommand {
-  executable: string;
-  args: string[];
+interface CodexSdkTurn {
+  finalResponse: string;
+  items: Array<{ type: string; [key: string]: unknown }>;
 }
 
 export class CodexRunner {
@@ -226,12 +226,9 @@ export class CodexRunner {
     }
 
     const prompt = this.buildPrompt(task);
-    const codexCommand = this.resolveCodexCommand();
     const codexEnv = this.buildCodexEnv();
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-runner-'));
-    const outputPath = path.join(tempDir, 'output.json');
 
-    core.info(`[CodexRunner] Launching Codex CLI via ${codexCommand.executable}`);
+    core.info('[CodexRunner] Launching Codex via @openai/codex-sdk');
     core.info(`[CodexRunner] OPENAI_API_KEY present: ${codexEnv.OPENAI_API_KEY ? 'yes' : 'no'}`);
     core.info(`[CodexRunner] OPENAI_API_KEY length: ${codexEnv.OPENAI_API_KEY?.length ?? 0}`);
     core.info(
@@ -242,62 +239,53 @@ export class CodexRunner {
     core.info(prompt);
     core.info('[CodexRunner] Prompt end');
 
-    const result = spawnSync(
-      codexCommand.executable,
-      [
-        ...codexCommand.args,
-        'exec',
-        '-',
-        '-c',
-        `base_url=${JSON.stringify(codexEnv.OPENAI_BASE_URL)}`,
-        '-c',
-        'preferred_auth_method="apikey"',
-        '--full-auto',
-        '--sandbox',
-        'workspace-write',
-        '--color',
-        'never',
-        '--output-last-message',
-        outputPath,
-        '--model',
-        this.resolveModel(modelConf),
-      ],
-      {
-        cwd: process.cwd(),
-        env: codexEnv,
-        input: prompt,
-        encoding: 'utf8',
-      }
-    );
-
     try {
-      if (result.error) {
-        throw new Error(`Failed to start Codex CLI: ${result.error.message}`);
-      }
-
-      if (result.status !== 0) {
-        this.logCodexStreams(result.stdout, result.stderr);
-        throw new Error(this.formatCodexFailure(result.stderr, result.stdout));
-      }
-
-      if (!fs.existsSync(outputPath)) {
-        this.logCodexStreams(result.stdout, result.stderr);
-        throw new Error(
-          'Codex finished without writing the expected output-last-message file.'
-        );
-      }
-
-      const raw = fs.readFileSync(outputPath, 'utf8').trim();
+      const turn = await this.executeStructuredTurn(prompt, schema, modelConf, codexEnv);
+      const raw = turn.finalResponse.trim();
+      core.info(`[CodexRunner] Completed turn items: ${turn.items.length}`);
       try {
-        return this.parseStructuredOutput<T>(raw, schema, result.stdout, result.stderr);
+        return this.parseStructuredOutput<T>(raw, schema);
       } catch (error) {
         this.logRawOutputFile(raw);
-        this.logCodexStreams(result.stdout, result.stderr);
         throw error;
       }
-    } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+    } catch (error: any) {
+      throw new Error(error?.message || 'Codex SDK execution failed.');
     }
+  }
+
+  protected async executeStructuredTurn(
+    prompt: string,
+    schema: Record<string, unknown>,
+    modelConf: string,
+    codexEnv: NodeJS.ProcessEnv
+  ): Promise<CodexSdkTurn> {
+    const sdkModulePath = pathToFileURL(
+      path.resolve(process.cwd(), 'node_modules/@openai/codex-sdk/dist/index.js')
+    ).href;
+    const { Codex } = await import(sdkModulePath);
+    const codex = new Codex({
+      apiKey: codexEnv.OPENAI_API_KEY,
+      baseUrl: codexEnv.OPENAI_BASE_URL,
+      env: codexEnv as Record<string, string>,
+      config: {
+        preferred_auth_method: 'apikey',
+      },
+    });
+
+    const thread = codex.startThread({
+      workingDirectory: process.cwd(),
+      model: this.resolveModel(modelConf),
+      sandboxMode: 'workspace-write',
+      approvalPolicy: 'never',
+      modelReasoningEffort: 'medium',
+    });
+
+    const turn = await thread.run(prompt, { outputSchema: schema });
+    return {
+      finalResponse: turn.finalResponse,
+      items: turn.items as Array<{ type: string; [key: string]: unknown }>,
+    };
   }
 
   private buildPrompt(task: CodexTaskContext): string {
@@ -326,86 +314,15 @@ export class CodexRunner {
     ].join('\n');
   }
 
-  private resolveCodexCommand(): CodexCliCommand {
-    const directBinary = path.resolve(process.cwd(), 'node_modules/.bin/codex');
-    if (fs.existsSync(directBinary)) {
-      return {
-        executable: directBinary,
-        args: [],
-      };
-    }
-
-    const packagedEntrypoint = path.resolve(process.cwd(), 'node_modules/@openai/codex/bin/codex.js');
-    if (fs.existsSync(packagedEntrypoint)) {
-      return {
-        executable: process.execPath,
-        args: [packagedEntrypoint],
-      };
-    }
-
-    throw new Error(
-      'Codex CLI is not available in this checkout. Ensure project dependencies are installed and `@openai/codex` is present before running the action.'
-    );
-  }
-
-  private formatCodexFailure(stderr?: string | null, stdout?: string | null): string {
-    const combined = [stderr, stdout]
-      .filter((chunk): chunk is string => typeof chunk === 'string' && chunk.trim().length > 0)
-      .join('\n')
-      .trim();
-
-    if (!combined) {
-      return 'Codex execution failed.';
-    }
-
-    const lines = combined
-      .split('\n')
-      .map((line) => line.trimEnd())
-      .filter((line) => line.trim().length > 0);
-
-    const tail = lines.slice(-20).join('\n').trim();
-    return tail || 'Codex execution failed.';
-  }
-
-  private logCodexStreams(stdout?: string | null, stderr?: string | null): void {
-    if (typeof stdout === 'string' && stdout.trim().length > 0) {
-      core.info('[CodexRunner] Codex stdout begin');
-      core.info(stdout);
-      core.info('[CodexRunner] Codex stdout end');
-    }
-
-    if (typeof stderr === 'string' && stderr.trim().length > 0) {
-      core.info('[CodexRunner] Codex stderr begin');
-      core.info(stderr);
-      core.info('[CodexRunner] Codex stderr end');
-    }
-  }
-
   private parseStructuredOutput<T>(
     raw: string,
-    schema: Record<string, unknown>,
-    stdout?: string | null,
-    stderr?: string | null
+    schema: Record<string, unknown>
   ): T {
     const directCandidate = this.extractJsonCandidate(raw, schema, true);
     if (directCandidate) {
       core.info('[CodexRunner] Structured output source: output-last-message');
       this.logStructuredCandidate(directCandidate);
       return this.validateStructuredOutput<T>(JSON.parse(directCandidate), schema);
-    }
-
-    const fallbackCandidate = this.extractJsonCandidate(
-      [stdout, stderr]
-        .filter((chunk): chunk is string => typeof chunk === 'string' && chunk.trim().length > 0)
-        .join('\n'),
-      schema,
-      false
-    );
-
-    if (fallbackCandidate) {
-      core.info('[CodexRunner] Structured output source: stdout/stderr fallback');
-      this.logStructuredCandidate(fallbackCandidate);
-      return this.validateStructuredOutput<T>(JSON.parse(fallbackCandidate), schema);
     }
 
     const schemaSummary = JSON.stringify(schema, null, 2);
