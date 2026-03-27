@@ -11,9 +11,11 @@ describe('BotController', () => {
   let mockOctokit: any;
   let controller: BotController;
   const mockCtx = { owner: 'test-org', repo: 'test-repo' };
+  let dateNowSpy: jest.SpyInstance<number, []>;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(1712345678901);
     
     // Setup generic mock for Octokit
     mockOctokit = {
@@ -34,6 +36,10 @@ describe('BotController', () => {
     };
 
     controller = new BotController(mockOctokit, mockCtx);
+  });
+
+  afterEach(() => {
+    dateNowSpy.mockRestore();
   });
 
   describe('handleWelcome', () => {
@@ -214,14 +220,18 @@ describe('BotController', () => {
        const payload = { number: 7, author: 'eve', body: 'ready for implementation', labels: ['state:planned'], isPR: false };
        await controller.handleCommand(payload);
 
-       expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('codex/issue-7-test');
+       expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('codex/issue-7-test-lv5kecpl');
        expect(mockGit.applyFileSystemChanges).toHaveBeenCalledWith([{ path: 'foo.ts', content: 'bar' }]);
-       expect(mockGit.commitAndPush).toHaveBeenCalledWith('Fix #7: Auto implementation', 'codex/issue-7-test');
+       expect(mockGit.commitAndPush).toHaveBeenCalledWith('Fix #7: Auto implementation', 'codex/issue-7-test-lv5kecpl');
 
        expect(mockOctokit.rest.pulls.create).toHaveBeenCalledWith(expect.objectContaining({
           title: 'AI Implementation for #7',
-          head: 'codex/issue-7-test',
+          head: 'codex/issue-7-test-lv5kecpl',
           base: 'main'
+       }));
+       expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+          issue_number: 99,
+          body: expect.stringContaining('ai: fix <instruction>')
        }));
        expect(mockOctokit.rest.issues.addLabels).toHaveBeenCalledWith(expect.objectContaining({
           labels: ['state:in-review']

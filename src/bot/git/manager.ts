@@ -6,6 +6,10 @@ import * as core from '@actions/core';
 
 const execAsync = util.promisify(exec);
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 export class GitManager {
   private workspace: string;
   private token: string;
@@ -51,7 +55,7 @@ export class GitManager {
     await execAsync(`git add .`, { cwd: this.workspace });
     
     try {
-       await execAsync(`git commit -m "${message}"`, { cwd: this.workspace });
+       await execAsync(`git commit -m ${shellQuote(message)}`, { cwd: this.workspace });
        
        core.info(`[GitManager] Pushing to origin ${branchName}...`);
        // The native checkout action sets up auth for push natively:

@@ -97,8 +97,19 @@ describe('GitManager', () => {
       await git.commitAndPush('Test Commit', 'ai-branch');
 
       expect(execAsyncMock).toHaveBeenCalledWith('git add .', expect.any(Object));
-      expect(execAsyncMock).toHaveBeenCalledWith('git commit -m "Test Commit"', expect.any(Object));
+      expect(execAsyncMock).toHaveBeenCalledWith("git commit -m 'Test Commit'", expect.any(Object));
       expect(execAsyncMock).toHaveBeenCalledWith('git push -u origin HEAD:ai-branch', expect.any(Object));
+    });
+
+    it('escapes quotes safely in commit messages', async () => {
+      execAsyncMock.mockResolvedValue({});
+
+      await git.commitAndPush(`PR Feedback Fix: change "we" to "I"`, 'ai-branch');
+
+      expect(execAsyncMock).toHaveBeenCalledWith(
+        `git commit -m 'PR Feedback Fix: change "we" to "I"'`,
+        expect.any(Object)
+      );
     });
 
     it('bypasses push gracefully if nothing to commit', async () => {

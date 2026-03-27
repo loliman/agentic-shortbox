@@ -190,6 +190,7 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
       base: 'main'
     });
 
+    await this.postStatus(pr.data.number, this.buildPullRequestWelcomeMessage(payload.number, payload.author));
     await this.postStatus(payload.number, `✅ Code generated and pushed to PR #${pr.data.number}!\nGo review it!`);
     await this.replaceStateLabel(payload.number, payload.labels, 'state:in-review');
   }
@@ -241,6 +242,20 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
     });
   }
 
+  private buildPullRequestWelcomeMessage(issueNumber: number, author: string) {
+    return `👋 **AI Review Helper**
+
+This Pull Request was created for Issue #${issueNumber}.
+
+**Available action here:**
+- Comment \`ai: fix <instruction>\` to ask me for a targeted follow-up change on this PR.
+
+**Example:**
+\`ai: fix make the bot messages more consistent and shorten the error text\`
+
+Reviewer: @${author}`;
+  }
+
   private buildImplementationBranchName(issueNumber: number, issueTitle: string) {
     const slug = issueTitle
       .toLowerCase()
@@ -252,7 +267,8 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
       .replace(/^-|-$/g, '')
       .slice(0, 48);
 
-    return `codex/issue-${issueNumber}-${slug || 'implementation'}`;
+    const suffix = Date.now().toString(36);
+    return `codex/issue-${issueNumber}-${slug || 'implementation'}-${suffix}`;
   }
 
   private formatSystemError(error: { message?: string }) {
