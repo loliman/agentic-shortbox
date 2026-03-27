@@ -140,16 +140,17 @@ export class LLMClient {
 
   async askJSON<T>(prompt: string, agentConf: string = 'openai', modelConf: string = 'strong'): Promise<T> {
     const raw = await this.ask(prompt, agentConf, modelConf);
-    try {
-      return JSON.parse(raw) as T;
-    } catch (e: any) {
-      const repaired = await this.tryRepairJSON(raw, agentConf, modelConf);
-      if (repaired !== null) {
-        return repaired as T;
-      }
-
-      throw new Error(`LLM output was not valid JSON. Response excerpt: ${raw.slice(0, 100)}`);
+    const parsed = this.tryParseJSON(raw);
+    if (parsed !== null) {
+      return parsed as T;
     }
+
+    const repaired = await this.tryRepairJSON(raw, agentConf, modelConf);
+    if (repaired !== null) {
+      return repaired as T;
+    }
+
+    throw new Error(`LLM output was not valid JSON. Response excerpt: ${raw.slice(0, 100)}`);
   }
 
   private async tryRepairJSON(raw: string, agentConf: string, modelConf: string): Promise<unknown | null> {
@@ -164,10 +165,90 @@ ${raw}`;
 
     const repairedRaw = await this.ask(repairPrompt, agentConf, modelConf);
 
-    try {
-      return JSON.parse(repairedRaw);
-    } catch {
-      return null;
+    return this.tryParseJSON(repairedRaw);
+  }
+
+  private tryParseJSON(raw: string): unknown | null {
+    const candidates = [
+      raw,
+      this.extractJSONCandidate(raw),
+      this.sanitizeJSONStringLiterals(raw),
+      this.sanitizeJSONStringLiterals(this.extractJSONCandidate(raw)),
+    ].filter((candidate): candidate is string => Boolean(candidate));
+
+    for (const candidate of candidates) {
+      try {
+        return JSON.parse(candidate);
+      } catch {
+        // try next candidate
+      }
     }
+
+    return null;
+  }
+
+  private extractJSONCandidate(raw: string): string {
+    const arrayStart = raw.indexOf('[');
+    const objectStart = raw.indexOf('{');
+    const starts = [arrayStart, objectStart].filter((index) => index >= 0);
+    if (starts.length === 0) {
+      return raw;
+    }
+
+    const start = Math.min(...starts);
+    const arrayEnd = raw.lastIndexOf(']');
+    const objectEnd = raw.lastIndexOf('}');
+    const end = Math.max(arrayEnd, objectEnd);
+
+    if (end <= start) {
+      return raw.slice(start);
+    }
+
+    return raw.slice(start, end + 1);
+  }
+
+  private sanitizeJSONStringLiterals(raw: string): string {
+    let sanitized = '';
+    let inString = false;
+    let escaping = false;
+
+    for (const char of raw) {
+      if (escaping) {
+        sanitized += char;
+        escaping = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        sanitized += char;
+        escaping = true;
+        continue;
+      }
+
+      if (char === '"') {
+        sanitized += char;
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) {
+        if (char === '\n') {
+          sanitized += '\\n';
+          continue;
+        }
+        if (char === '\r') {
+          sanitized += '\\r';
+          continue;
+        }
+        if (char === '\t') {
+          sanitized += '\\t';
+          continue;
+        }
+      }
+
+      sanitized += char;
+    }
+
+    return sanitized;
   }
 }
