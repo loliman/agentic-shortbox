@@ -2,10 +2,12 @@ import { BotController } from '../controller';
 import { LLMClient, MissingConfigurationError } from '../llm/client';
 import { GitManager } from '../git/manager';
 import * as core from '@actions/core';
+import fs from 'fs';
 
 jest.mock('../llm/client');
 jest.mock('../git/manager');
 jest.mock('@actions/core');
+jest.mock('fs');
 
 describe('BotController', () => {
   let mockOctokit: any;
@@ -255,7 +257,7 @@ describe('BotController', () => {
       mockOctokit.rest.pulls.get.mockResolvedValueOnce({ data: { head: { ref: 'existing-branch' } } });
       mockOctokit.rest.pulls.get.mockResolvedValueOnce({ data: 'diff --git a/foo.ts b/foo.ts' });
       mockOctokit.rest.pulls.listReviewComments.mockResolvedValueOnce({
-        data: [{ user: { type: 'User' }, path: 'src/foo.ts', line: 12, body: 'Please simplify this message.' }]
+        data: [{ user: { type: 'User' }, path: 'src/foo.ts', line: 12, body: 'Please simplify this message.', diff_hunk: '@@ -12 +12 @@' }]
       });
       mockOctokit.rest.pulls.listReviews.mockResolvedValueOnce({
         data: [{ user: { type: 'User' }, state: 'CHANGES_REQUESTED', body: 'Please revise the wording.' }]
@@ -266,6 +268,8 @@ describe('BotController', () => {
       mockOctokit.rest.issues.listComments.mockResolvedValueOnce({
         data: [{ user: { type: 'User', login: 'bob' }, body: 'ready for rework' }]
       });
+      (fs.existsSync as jest.Mock).mockReturnValue(true);
+      (fs.readFileSync as jest.Mock).mockReturnValue('const message = "hello";\n');
 
       const payload = { number: 99, author: 'bob', body: 'ready for rework', labels: [], isPR: true };
       await controller.handleCommand(payload);
@@ -273,8 +277,8 @@ describe('BotController', () => {
       const mockClient = (LLMClient as jest.Mock).mock.results.at(-1)?.value;
       expect(mockClient.generateCode).toHaveBeenCalledWith(
         'PR Rework for #99',
-        expect.stringContaining('Apply only the requested review feedback'),
-        expect.stringContaining('src/foo.ts')
+        expect.stringContaining('Prefer the exact files and lines referenced'),
+        expect.stringContaining('1: const message = "hello";')
       );
       expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('existing-branch');
       expect(mockGit.commitAndPush).toHaveBeenCalledWith('PR Rework: address review feedback', 'existing-branch');

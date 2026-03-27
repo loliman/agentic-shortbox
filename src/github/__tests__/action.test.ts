@@ -80,6 +80,41 @@ describe('GitHub Action Router (main)', () => {
     expect(core.info).toHaveBeenCalledWith('[Action] Ignoring bot-authored comment event.');
   });
 
+  it('routes submitted pull request reviews to the command flow', async () => {
+    (github as any).context.eventName = 'pull_request_review';
+    (github as any).context.payload = {
+      action: 'submitted',
+      pull_request: { number: 77, labels: [{ name: 'state:in-review' }] },
+      review: { body: 'ready for rework', user: { login: 'octocat', type: 'User' } }
+    };
+
+    await main();
+
+    const mockControllerInstance = (BotController as jest.Mock).mock.instances[0];
+    expect(mockControllerInstance.handleCommand).toHaveBeenCalledWith({
+      number: 77,
+      author: 'octocat',
+      body: 'ready for rework',
+      labels: ['state:in-review'],
+      isPR: true
+    });
+  });
+
+  it('ignores bot-authored submitted reviews', async () => {
+    (github as any).context.eventName = 'pull_request_review';
+    (github as any).context.payload = {
+      action: 'submitted',
+      pull_request: { number: 77, labels: [{ name: 'state:in-review' }] },
+      review: { body: 'ready for rework', user: { login: 'github-actions[bot]', type: 'Bot' } }
+    };
+
+    await main();
+
+    const mockControllerInstance = (BotController as jest.Mock).mock.instances[0];
+    expect(mockControllerInstance.handleCommand).not.toHaveBeenCalled();
+    expect(core.info).toHaveBeenCalledWith('[Action] Ignoring bot-authored review event.');
+  });
+
   it('sets failed and exits 1 on catastrophic top-level errors', async () => {
     (github as any).context.eventName = 'issues';
     (github as any).context.payload = {

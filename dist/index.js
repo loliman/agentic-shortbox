@@ -51671,9 +51671,14 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.BotController = void 0;
 const core = __importStar(__nccwpck_require__(7484));
+const fs_1 = __importDefault(__nccwpck_require__(9896));
+const path_1 = __importDefault(__nccwpck_require__(6928));
 const client_1 = __nccwpck_require__(5650);
 const manager_1 = __nccwpck_require__(2881);
 const parser_1 = __nccwpck_require__(5392);
@@ -51868,11 +51873,11 @@ class BotController {
         // Pull Request issues can expose the base ref
         const pr = await this.octokit.rest.pulls.get({ ...this.ctx, pull_number: payload.number });
         const headBranch = pr.data.head.ref;
-        const reworkContext = await this.buildPullRequestReworkContext(payload.number);
-        const agent = new client_1.LLMClient();
-        const codeOps = await agent.generateCode(`PR Rework for #${payload.number}`, 'Apply only the requested review feedback from the PR context. Keep all unrelated code unchanged.', reworkContext);
         const git = new manager_1.GitManager(process.env.GITHUB_TOKEN || '');
         await git.checkoutNewBranch(headBranch); // Checkout existing head
+        const reworkContext = await this.buildPullRequestReworkContext(payload.number);
+        const agent = new client_1.LLMClient();
+        const codeOps = await agent.generateCode(`PR Rework for #${payload.number}`, 'Apply only the requested review feedback from the PR context. Prefer the exact files and lines referenced in the review feedback. Keep all unrelated code unchanged.', reworkContext);
         await git.applyFileSystemChanges(codeOps);
         await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
         await this.postStatus(payload.number, `✅ Addressed feedback pushed to ${headBranch}.`);
@@ -51912,8 +51917,11 @@ class BotController {
             .map((comment) => {
             const path = comment.path ? `file=${comment.path}` : 'file=unknown';
             const line = comment.line ? ` line=${comment.line}` : '';
+            const hunk = typeof comment.diff_hunk === 'string' && comment.diff_hunk.trim()
+                ? `\n  hunk:\n${comment.diff_hunk}`
+                : '';
             const body = typeof comment.body === 'string' ? comment.body.trim() : '';
-            return `- ${path}${line}: ${body}`;
+            return `- ${path}${line}: ${body}${hunk}`;
         });
         const reviewSummaryLines = reviews.data
             .filter((review) => review.user?.type !== 'Bot' && typeof review.body === 'string' && review.body.trim())
@@ -51929,6 +51937,20 @@ class BotController {
             const patch = typeof file.patch === 'string' ? file.patch : '';
             return `- ${file.filename}\n${patch}`;
         });
+        const referencedPaths = new Set();
+        for (const comment of reviewComments.data) {
+            if (comment.user?.type !== 'Bot' && typeof comment.path === 'string' && comment.path) {
+                referencedPaths.add(comment.path);
+            }
+        }
+        for (const file of files.data) {
+            if (typeof file.filename === 'string' && file.filename) {
+                referencedPaths.add(file.filename);
+            }
+        }
+        const workspaceFiles = Array.from(referencedPaths)
+            .map((filePath) => this.readWorkspaceFileForReview(filePath))
+            .filter((entry) => Boolean(entry));
         if (reviewCommentLines.length === 0 &&
             reviewSummaryLines.length === 0 &&
             discussionLines.length === 0) {
@@ -51947,9 +51969,24 @@ class BotController {
             '=== CHANGED FILES ===',
             changedFiles.length ? changedFiles.join('\n\n') : 'No changed files reported.',
             '',
+            '=== CURRENT FILE CONTENTS ===',
+            workspaceFiles.length ? workspaceFiles.join('\n\n') : 'No local file content available.',
+            '',
             '=== PR DIFF ===',
             diff || 'No diff available.',
         ].join('\n');
+    }
+    readWorkspaceFileForReview(filePath) {
+        const fullPath = path_1.default.resolve(process.cwd(), filePath);
+        if (!fs_1.default.existsSync(fullPath)) {
+            return '';
+        }
+        const content = fs_1.default.readFileSync(fullPath, 'utf8');
+        const numbered = content
+            .split('\n')
+            .map((line, index) => `${index + 1}: ${line}`)
+            .join('\n');
+        return `--- ${filePath} ---\n${numbered}`;
     }
     async fetchPullRequestDiff(prNumber) {
         const response = await this.octokit.rest.pulls.get({
@@ -51968,7 +52005,7 @@ class BotController {
             [
                 '**Review flow here:**',
                 '1. Leave inline review comments or submit a full review on the PR.',
-                '2. Comment `ready for rework` on the PR when the feedback set is complete.',
+                '2. Either submit a review with the exact text `ready for rework` or comment `ready for rework` on the PR when the feedback set is complete.',
                 '3. I will collect the review feedback, changed files, and diff, then apply only that rework.',
             ].join('\n'),
             ['**Example:**', '`ready for rework`'].join('\n'),
@@ -52685,6 +52722,27 @@ async function main() {
                 body,
                 labels,
                 isPR
+            });
+            return;
+        }
+        // 3. Rework trigger from submitted PR reviews
+        if (eventName === 'pull_request_review' && github.context.payload.action === 'submitted') {
+            const pullRequest = github.context.payload.pull_request;
+            const review = github.context.payload.review;
+            if (!pullRequest || !review)
+                return;
+            if (review.user?.type === 'Bot') {
+                core.info('[Action] Ignoring bot-authored review event.');
+                return;
+            }
+            const labels = pullRequest.labels ? pullRequest.labels.map((l) => l.name) : [];
+            core.info(`[Action] Parsing submitted review from @${review.user.login} on PR #${pullRequest.number}`);
+            await controller.handleCommand({
+                number: pullRequest.number,
+                author: review.user.login,
+                body: review.body || '',
+                labels,
+                isPR: true
             });
             return;
         }

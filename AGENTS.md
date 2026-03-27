@@ -78,7 +78,7 @@ Do not fake statuses. Always explicitly transition states via API (`state:planni
 
 For Pull Requests, the human workflow is:
 1. Leave review feedback on the PR and submit the review if needed.
-2. Comment `ready for rework` on the PR once the feedback set is complete.
+2. Either submit the review with `ready for rework` or comment `ready for rework` on the PR once the feedback set is complete.
 3. The bot collects that PR feedback and applies only the requested rework.
 
 ---

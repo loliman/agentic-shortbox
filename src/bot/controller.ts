@@ -1,4 +1,6 @@
 import * as core from '@actions/core';
+import fs from 'fs';
+import path from 'path';
 import { LLMClient } from './llm/client';
 import { GitManager } from './git/manager';
 import { parseCommand, parseConfiguration } from '../core/parser';
@@ -221,17 +223,17 @@ export class BotController {
      // Pull Request issues can expose the base ref
      const pr = await this.octokit.rest.pulls.get({ ...this.ctx, pull_number: payload.number });
      const headBranch = pr.data.head.ref;
+     
+     const git = new GitManager(process.env.GITHUB_TOKEN || '');
+     await git.checkoutNewBranch(headBranch); // Checkout existing head
      const reworkContext = await this.buildPullRequestReworkContext(payload.number);
      
      const agent = new LLMClient();
      const codeOps = await agent.generateCode(
        `PR Rework for #${payload.number}`,
-       'Apply only the requested review feedback from the PR context. Keep all unrelated code unchanged.',
+       'Apply only the requested review feedback from the PR context. Prefer the exact files and lines referenced in the review feedback. Keep all unrelated code unchanged.',
        reworkContext
      );
-     
-     const git = new GitManager(process.env.GITHUB_TOKEN || '');
-     await git.checkoutNewBranch(headBranch); // Checkout existing head
      await git.applyFileSystemChanges(codeOps);
      await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
      
@@ -278,8 +280,11 @@ export class BotController {
       .map((comment: any) => {
         const path = comment.path ? `file=${comment.path}` : 'file=unknown';
         const line = comment.line ? ` line=${comment.line}` : '';
+        const hunk = typeof comment.diff_hunk === 'string' && comment.diff_hunk.trim()
+          ? `\n  hunk:\n${comment.diff_hunk}`
+          : '';
         const body = typeof comment.body === 'string' ? comment.body.trim() : '';
-        return `- ${path}${line}: ${body}`;
+        return `- ${path}${line}: ${body}${hunk}`;
       });
 
     const reviewSummaryLines = reviews.data
@@ -298,6 +303,22 @@ export class BotController {
       const patch = typeof file.patch === 'string' ? file.patch : '';
       return `- ${file.filename}\n${patch}`;
     });
+
+    const referencedPaths = new Set<string>();
+    for (const comment of reviewComments.data) {
+      if (comment.user?.type !== 'Bot' && typeof comment.path === 'string' && comment.path) {
+        referencedPaths.add(comment.path);
+      }
+    }
+    for (const file of files.data) {
+      if (typeof file.filename === 'string' && file.filename) {
+        referencedPaths.add(file.filename);
+      }
+    }
+
+    const workspaceFiles = Array.from(referencedPaths)
+      .map((filePath) => this.readWorkspaceFileForReview(filePath))
+      .filter((entry): entry is string => Boolean(entry));
 
     if (
       reviewCommentLines.length === 0 &&
@@ -320,9 +341,27 @@ export class BotController {
       '=== CHANGED FILES ===',
       changedFiles.length ? changedFiles.join('\n\n') : 'No changed files reported.',
       '',
+      '=== CURRENT FILE CONTENTS ===',
+      workspaceFiles.length ? workspaceFiles.join('\n\n') : 'No local file content available.',
+      '',
       '=== PR DIFF ===',
       diff || 'No diff available.',
     ].join('\n');
+  }
+
+  private readWorkspaceFileForReview(filePath: string) {
+    const fullPath = path.resolve(process.cwd(), filePath);
+    if (!fs.existsSync(fullPath)) {
+      return '';
+    }
+
+    const content = fs.readFileSync(fullPath, 'utf8');
+    const numbered = content
+      .split('\n')
+      .map((line, index) => `${index + 1}: ${line}`)
+      .join('\n');
+
+    return `--- ${filePath} ---\n${numbered}`;
   }
 
   private async fetchPullRequestDiff(prNumber: number) {
@@ -344,7 +383,7 @@ export class BotController {
       [
         '**Review flow here:**',
         '1. Leave inline review comments or submit a full review on the PR.',
-        '2. Comment `ready for rework` on the PR when the feedback set is complete.',
+        '2. Either submit a review with the exact text `ready for rework` or comment `ready for rework` on the PR when the feedback set is complete.',
         '3. I will collect the review feedback, changed files, and diff, then apply only that rework.',
       ].join('\n'),
       ['**Example:**', '`ready for rework`'].join('\n'),

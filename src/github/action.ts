@@ -64,6 +64,31 @@ export async function main() {
       return;
     }
 
+    // 3. Rework trigger from submitted PR reviews
+    if (eventName === 'pull_request_review' && github.context.payload.action === 'submitted') {
+      const pullRequest = github.context.payload.pull_request;
+      const review = github.context.payload.review;
+
+      if (!pullRequest || !review) return;
+      if (review.user?.type === 'Bot') {
+        core.info('[Action] Ignoring bot-authored review event.');
+        return;
+      }
+
+      const labels = pullRequest.labels ? pullRequest.labels.map((l: any) => l.name) : [];
+
+      core.info(`[Action] Parsing submitted review from @${review.user.login} on PR #${pullRequest.number}`);
+
+      await controller.handleCommand({
+        number: pullRequest.number,
+        author: review.user.login,
+        body: review.body || '',
+        labels,
+        isPR: true
+      });
+      return;
+    }
+
   } catch (error: any) {
     core.setFailed(`[AI Bot Execution Error]: ${error.message}`);
     process.exit(1);
