@@ -155,6 +155,9 @@ describe('CodexRunner', () => {
     await expect(runner.generateImplementationPlan('Feature', 'Body', false, 'fast')).rejects.toThrow(
       'Codex returned a non-JSON final message.'
     );
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Raw output-last-message begin');
+    expect(core.info).toHaveBeenCalledWith('not json');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Raw output-last-message end');
   });
 
   it('falls back to JSON found in stdout when the final message file is empty', async () => {

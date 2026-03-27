@@ -277,7 +277,13 @@ export class CodexRunner {
       }
 
       const raw = fs.readFileSync(outputPath, 'utf8').trim();
-      return this.parseStructuredOutput<T>(raw, schema, result.stdout, result.stderr);
+      try {
+        return this.parseStructuredOutput<T>(raw, schema, result.stdout, result.stderr);
+      } catch (error) {
+        this.logRawOutputFile(raw);
+        this.logCodexStreams(result.stdout, result.stderr);
+        throw error;
+      }
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
@@ -407,6 +413,12 @@ export class CodexRunner {
     core.info('[CodexRunner] Structured output candidate begin');
     core.info(candidate);
     core.info('[CodexRunner] Structured output candidate end');
+  }
+
+  private logRawOutputFile(raw: string): void {
+    core.info('[CodexRunner] Raw output-last-message begin');
+    core.info(raw);
+    core.info('[CodexRunner] Raw output-last-message end');
   }
 
   private extractJsonCandidate(

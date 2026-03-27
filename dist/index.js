@@ -32806,7 +32806,14 @@ class CodexRunner {
                 throw new Error('Codex finished without writing the expected output-last-message file.');
             }
             const raw = fs_1.default.readFileSync(outputPath, 'utf8').trim();
-            return this.parseStructuredOutput(raw, schema, result.stdout, result.stderr);
+            try {
+                return this.parseStructuredOutput(raw, schema, result.stdout, result.stderr);
+            }
+            catch (error) {
+                this.logRawOutputFile(raw);
+                this.logCodexStreams(result.stdout, result.stderr);
+                throw error;
+            }
         }
         finally {
             fs_1.default.rmSync(tempDir, { recursive: true, force: true });
@@ -32909,6 +32916,11 @@ class CodexRunner {
         core.info('[CodexRunner] Structured output candidate begin');
         core.info(candidate);
         core.info('[CodexRunner] Structured output candidate end');
+    }
+    logRawOutputFile(raw) {
+        core.info('[CodexRunner] Raw output-last-message begin');
+        core.info(raw);
+        core.info('[CodexRunner] Raw output-last-message end');
     }
     extractJsonCandidate(content, schema, allowLooseExtraction = true) {
         if (!content) {
