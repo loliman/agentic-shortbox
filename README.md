@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: christian-riese/agentic-shortbox@v0.3.0
+      - uses: christian-riese/agentic-shortbox@v1.0.0
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
@@ -114,4 +114,4 @@ git tag vX.Y.Z
 git push origin main --tags
 ```
 
-Then update consumers from `@v0.3.0` to the next tag as needed.
+Then update consumers from `@v1.0.0` to the next tag as needed.
