@@ -220,13 +220,13 @@ describe('BotController', () => {
        const payload = { number: 7, author: 'eve', body: 'ready for implementation', labels: ['state:planned'], isPR: false };
        await controller.handleCommand(payload);
 
-       expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('codex/issue-7-test-lv5kecpl');
+       expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('codex/issue-7-test-lun2elv9');
        expect(mockGit.applyFileSystemChanges).toHaveBeenCalledWith([{ path: 'foo.ts', content: 'bar' }]);
-       expect(mockGit.commitAndPush).toHaveBeenCalledWith('Fix #7: Auto implementation', 'codex/issue-7-test-lv5kecpl');
+       expect(mockGit.commitAndPush).toHaveBeenCalledWith('Fix #7: Auto implementation', 'codex/issue-7-test-lun2elv9');
 
        expect(mockOctokit.rest.pulls.create).toHaveBeenCalledWith(expect.objectContaining({
           title: 'AI Implementation for #7',
-          head: 'codex/issue-7-test-lv5kecpl',
+          head: 'codex/issue-7-test-lun2elv9',
           base: 'main'
        }));
        expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({

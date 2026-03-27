@@ -9,8 +9,8 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    # Ignore bot-authored comments, but still react to newly opened issues created by automation.
-    if: github.event_name != 'issue_comment' || github.event.sender.type != 'Bot'
+    # Ignore Bot Activities
+    if: github.event.sender.type != 'Bot'
 
     permissions:
       contents: write
@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
 
       # Self-referencing: this repo IS the action.
-      # External repos replace ./ with loliman/agentic-shortbox@v1.3
+      # External repos replace ./ with loliman/agentic-shortbox@v0.1.0
       - name: Run AI Bot
         uses: ./
         env:
