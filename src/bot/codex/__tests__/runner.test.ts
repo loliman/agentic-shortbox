@@ -74,6 +74,9 @@ describe('CodexRunner', () => {
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Prompt begin');
     expect(core.info).toHaveBeenCalledWith(expect.stringContaining('Command: ready for planning'));
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Prompt end');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Turn items begin');
+    expect(core.info).toHaveBeenCalledWith(JSON.stringify({ type: 'agent_message' }));
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Turn items end');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Final response begin');
     expect(core.info).toHaveBeenCalledWith('{"action":"plan","content":"# Plan"}');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Final response end');
