@@ -27,9 +27,8 @@ export function parseCommand(text: string): ParsedCommand | null {
     return { type: 'implement' };
   }
 
-  if (normalized.startsWith('needs rework:')) {
-    const additionalText = text.substring(text.toLowerCase().indexOf('needs rework:') + 13).trim();
-    return { type: 'rework', additionalText };
+  if (normalized === 'ready for rework') {
+    return { type: 'rework' };
   }
 
   return null; // Ignore completely if no command is detected

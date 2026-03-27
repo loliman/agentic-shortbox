@@ -72,9 +72,14 @@ Contains:
 
 We utilize GitHub Issues as our UI console.
 - **Labels** (e.g., `agent:codex`, `model:fast`) are **Configuration**. They never initiate an action.
-- **Comments** (e.g., `ready for planning`, `ready for implementation`) are **Commands**. They always initiate an action.
+- **Comments** (e.g., `ready for planning`, `ready for implementation`, `ready for rework`) are **Commands**. They always initiate an action.
 
 Do not fake statuses. Always explicitly transition states via API (`state:planning` -> `state:planned`).
+
+For Pull Requests, the human workflow is:
+1. Leave review feedback directly on the PR.
+2. Comment `ready for rework` once the feedback set is complete.
+3. The bot collects that PR feedback and applies only the requested rework.
 
 ---
 

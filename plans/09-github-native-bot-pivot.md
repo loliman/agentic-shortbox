@@ -48,7 +48,7 @@ Instead of a router, we create a native Bot Controller that handles:
 - **Welcome Trigger**: When an issue opens, lists available LLMs based on `process.env` configs and posts usage instructions.
 - **Planning Pipeline**: On `ready for planning` or `ready for planning!`. Forces a plan generation against `/plans/template`.
 - **Implementation Pipeline**: On `ready for implementation`. Creates a branch on the local actions-runner workspace, triggers the LLM, commits files, pushes to `origin`, and creates a PR.
-- **Review Pipeline**: On PR comments starting with `ai: fix`, alters code and pushes.
+- **Review Pipeline**: On `ready for rework`, collects PR review feedback and alters code accordingly.
 - **Specification Pipeline**: On `ready for specification`. Splits issues based on `specs/templates`.
 
 #### [MODIFY] `src/worker/llm/client.ts`

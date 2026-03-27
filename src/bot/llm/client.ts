@@ -105,9 +105,9 @@ export class LLMClient {
     return this.askJSON(prompt);
   }
 
-  async generateCode(title: string, body: string): Promise<{ path: string, content: string }[]> {
+  async generateCode(title: string, body: string, currentCodeContext?: string): Promise<{ path: string, content: string }[]> {
     const sys = this.gatherSystemContext();
-    const prompt = `${sys}\n\n${generateCodePrompt(title, body)}`;
+    const prompt = `${sys}\n\n${generateCodePrompt(title, body, currentCodeContext)}`;
     return this.askJSON(prompt);
   }
 

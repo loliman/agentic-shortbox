@@ -17,7 +17,7 @@ Open an Issue. Comment a command. The bot does the rest.
 | `ready for planning` | Generates a full implementation plan (hesitates if spec is vague) |
 | `ready for planning!` | Forces a plan without hesitation |
 | `ready for implementation` | Writes code, commits to a branch, opens a PR |
-| `ai: fix <feedback>` | In a PR comment: bot commits a targeted fix |
+| `ready for rework` | On a PR: bot gathers review feedback and applies the requested rework |
 
 ---
 
@@ -39,7 +39,7 @@ on:
 jobs:
   ai-bot:
     runs-on: ubuntu-latest
-    if: github.event.sender.type != 'Bot'
+    if: github.event_name != 'issue_comment' || github.event.sender.type != 'Bot'
 
     permissions:
       contents: write
@@ -78,6 +78,8 @@ Apply labels to each issue before giving commands:
 | `model:strong` | Use the strongest model (default) |
 
 That's it. Open an issue and the bot greets you.
+
+For Pull Requests, leave your inline review feedback or discussion comments first, then comment `ready for rework` once the feedback is complete.
 
 ---
 

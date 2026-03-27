@@ -51731,9 +51731,10 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
     }
     // 2. COMMAND PARSER & GATEWAY
     async handleCommand(payload) {
-        if (payload.isPR && payload.body.trim().startsWith('ai: fix')) {
+        const command = (0, parser_1.parseCommand)(payload.body);
+        if (payload.isPR && command?.type === 'rework') {
             try {
-                return await this.handleReviewFix(payload);
+                return await this.handleReviewRework(payload);
             }
             catch (e) {
                 await this.postStatus(payload.number, this.formatSystemError(e));
@@ -51741,7 +51742,6 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
             }
         }
         // Parse generic action commands
-        const command = (0, parser_1.parseCommand)(payload.body);
         if (!command)
             return core.info('[Bot] No AI command detected in comment.');
         // State Checks (Guard)
@@ -51842,7 +51842,7 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
         const pr = await this.octokit.rest.pulls.create({
             ...this.ctx,
             title: `AI Implementation for #${payload.number}`,
-            body: `This Pull Request implements auto-generated code for Issue #${payload.number}.\n\nReviewer: @${payload.author}\n\nProvide feedback by commenting \`ai: fix [instruction]\` on this PR.`,
+            body: `This Pull Request implements auto-generated code for Issue #${payload.number}.\n\nReviewer: @${payload.author}\n\nLeave review feedback on the PR and then comment \`ready for rework\` when you want me to apply it.`,
             head: branchName,
             base: 'main'
         });
@@ -51850,20 +51850,19 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
         await this.postStatus(payload.number, `✅ Code generated and pushed to PR #${pr.data.number}!\nGo review it!`);
         await this.replaceStateLabel(payload.number, payload.labels, 'state:in-review');
     }
-    // 6. PR REVIEW FIX
-    async handleReviewFix(payload) {
-        const fixInstruction = payload.body.replace('ai: fix', '').trim();
-        await this.postStatus(payload.number, "Addressing your PR review feedback...");
+    // 6. PR REVIEW REWORK
+    async handleReviewRework(payload) {
+        await this.postStatus(payload.number, "Review feedback detected. I am collecting the PR comments, file context, and current diff before applying the requested rework...");
         // Pull Request issues can expose the base ref
         const pr = await this.octokit.rest.pulls.get({ ...this.ctx, pull_number: payload.number });
         const headBranch = pr.data.head.ref;
+        const reworkContext = await this.buildPullRequestReworkContext(payload.number);
         const agent = new client_1.LLMClient();
-        // We should send the PR diff, but for simplicity we send the fix instruction
-        const codeOps = await agent.generateCode('PR Fix', fixInstruction);
+        const codeOps = await agent.generateCode(`PR Rework for #${payload.number}`, 'Apply only the requested review feedback from the PR context. Keep all unrelated code unchanged.', reworkContext);
         const git = new manager_1.GitManager(process.env.GITHUB_TOKEN || '');
         await git.checkoutNewBranch(headBranch); // Checkout existing head
         await git.applyFileSystemChanges(codeOps);
-        await git.commitAndPush(`PR Feedback Fix: ${fixInstruction}`, headBranch);
+        await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
         await this.postStatus(payload.number, `✅ Addressed feedback pushed to ${headBranch}.`);
     }
     // -- Utilities --
@@ -51888,16 +51887,80 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
             return body.startsWith('**Implementation Plan**');
         });
     }
+    async buildPullRequestReworkContext(prNumber) {
+        const [reviewComments, issueComments, reviews, files, diff] = await Promise.all([
+            this.octokit.rest.pulls.listReviewComments({ ...this.ctx, pull_number: prNumber, per_page: 100 }),
+            this.octokit.rest.issues.listComments({ ...this.ctx, issue_number: prNumber, per_page: 100 }),
+            this.octokit.rest.pulls.listReviews({ ...this.ctx, pull_number: prNumber, per_page: 100 }),
+            this.octokit.rest.pulls.listFiles({ ...this.ctx, pull_number: prNumber, per_page: 100 }),
+            this.fetchPullRequestDiff(prNumber),
+        ]);
+        const reviewCommentLines = reviewComments.data
+            .filter((comment) => comment.user?.type !== 'Bot')
+            .map((comment) => {
+            const path = comment.path ? `file=${comment.path}` : 'file=unknown';
+            const line = comment.line ? ` line=${comment.line}` : '';
+            const body = typeof comment.body === 'string' ? comment.body.trim() : '';
+            return `- ${path}${line}: ${body}`;
+        });
+        const reviewSummaryLines = reviews.data
+            .filter((review) => review.user?.type !== 'Bot' && typeof review.body === 'string' && review.body.trim())
+            .map((review) => `- state=${review.state}: ${review.body.trim()}`);
+        const discussionLines = issueComments.data
+            .filter((comment) => comment.user?.type !== 'Bot')
+            .filter((comment) => {
+            const body = typeof comment.body === 'string' ? comment.body.trim().toLowerCase() : '';
+            return body && body !== 'ready for rework';
+        })
+            .map((comment) => `- @${comment.user?.login || 'unknown'}: ${String(comment.body || '').trim()}`);
+        const changedFiles = files.data.map((file) => {
+            const patch = typeof file.patch === 'string' ? file.patch : '';
+            return `- ${file.filename}\n${patch}`;
+        });
+        if (reviewCommentLines.length === 0 &&
+            reviewSummaryLines.length === 0 &&
+            discussionLines.length === 0) {
+            throw new Error('No PR feedback was found. Leave review comments or PR discussion feedback first, then comment `ready for rework`.');
+        }
+        return [
+            '=== PR REVIEW FEEDBACK ===',
+            reviewCommentLines.length ? reviewCommentLines.join('\n') : 'No inline review comments found.',
+            '',
+            '=== PR REVIEW SUMMARIES ===',
+            reviewSummaryLines.length ? reviewSummaryLines.join('\n') : 'No review summaries found.',
+            '',
+            '=== PR DISCUSSION COMMENTS ===',
+            discussionLines.length ? discussionLines.join('\n') : 'No PR discussion comments found.',
+            '',
+            '=== CHANGED FILES ===',
+            changedFiles.length ? changedFiles.join('\n\n') : 'No changed files reported.',
+            '',
+            '=== PR DIFF ===',
+            diff || 'No diff available.',
+        ].join('\n');
+    }
+    async fetchPullRequestDiff(prNumber) {
+        const response = await this.octokit.rest.pulls.get({
+            ...this.ctx,
+            pull_number: prNumber,
+            mediaType: {
+                format: 'diff'
+            }
+        });
+        return response.data;
+    }
     buildPullRequestWelcomeMessage(issueNumber, author) {
         return `👋 **AI Review Helper**
 
 This Pull Request was created for Issue #${issueNumber}.
 
-**Available action here:**
-- Comment \`ai: fix <instruction>\` to ask me for a targeted follow-up change on this PR.
+**Review flow here:**
+1. Leave inline review comments or general PR feedback.
+2. Comment \`ready for rework\` on the PR when the feedback is complete.
+3. I will collect the review feedback, changed files, and diff, then apply only that rework.
 
 **Example:**
-\`ai: fix make the bot messages more consistent and shorten the error text\`
+\`ready for rework\`
 
 Reviewer: @${author}`;
     }
@@ -52147,9 +52210,9 @@ class LLMClient {
         const prompt = `\n\n${sys}\n\n=== TASK: IMPLEMENTATION PLANNING ===\nYou are an Architect creating an implementation plan.\nIssue Title: ${title}\nIssue Body: ${body}\n\nINSTRUCTION: ${instruction}\n\nReturn EXACTLY a JSON object mapping to: { action: 'plan' | 'question', content: string }.`;
         return this.askJSON(prompt);
     }
-    async generateCode(title, body) {
+    async generateCode(title, body, currentCodeContext) {
         const sys = this.gatherSystemContext();
-        const prompt = `${sys}\n\n${(0, prompts_1.generateCodePrompt)(title, body)}`;
+        const prompt = `${sys}\n\n${(0, prompts_1.generateCodePrompt)(title, body, currentCodeContext)}`;
         return this.askJSON(prompt);
     }
     async ask(prompt, agentConf = 'openai', modelConf = 'strong') {
@@ -52378,9 +52441,8 @@ function parseCommand(text) {
     if (normalized === 'ready for implementation') {
         return { type: 'implement' };
     }
-    if (normalized.startsWith('needs rework:')) {
-        const additionalText = text.substring(text.toLowerCase().indexOf('needs rework:') + 13).trim();
-        return { type: 'rework', additionalText };
+    if (normalized === 'ready for rework') {
+        return { type: 'rework' };
     }
     return null; // Ignore completely if no command is detected
 }

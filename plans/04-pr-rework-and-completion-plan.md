@@ -1,12 +1,12 @@
 # Plan: PR Rework and Completion Workflow
 
 ## Summary
-To fully support the AI-First workflow lifecycle, we need to handle the post-implementation phases. This involves parsing instructions from Pull Request comments (e.g., `needs rework: fix the padding`) so the AI can iterate on its own code, rather than starting from scratch. Furthermore, upon a successful merge by a human reviewer, the AI will generate a final summary and automatically close the parent issue, explicitly transitioning the workflow state to `done`.
+To fully support the AI-first workflow lifecycle, we need to handle the post-implementation phases. This involves collecting review feedback from the Pull Request itself and then using a single `ready for rework` command to trigger a focused rework pass. Upon a successful merge by a human reviewer, the AI can later generate a final summary and automatically close the parent issue, explicitly transitioning the workflow state to `done`.
 
 ## Affected Files
-- `src/core/parser.ts`: Expanding or ensuring our existing `needs rework: *` parser functionality is properly exposed to the PR domain.
+- `src/core/parser.ts`: Expose `ready for rework` to the PR domain.
 - `src/core/state-machine.ts`: Adding the transitions for `in-review` -> `reworking` and `reworking` -> `in-review`, and `in-review` -> `done`.
-- `src/github/api.ts`: Ensure it has Octokit support for creating PR-level comments, fetching PR diffs (for the final summary), and automatically closing issues.
+- `src/github/api.ts`: Ensure it has Octokit support for creating PR-level comments, fetching PR diffs and review feedback, and automatically closing issues.
 
 ## New Files
 - `.github/workflows/ai-pr-orchestrator.yml`: A separate GitHub Action dedicated to monitoring Pull Requests (listening for `pull_request_review_comment`, `pull_request` edits, and `pull_request` closed/merged events).
@@ -18,12 +18,12 @@ To fully support the AI-First workflow lifecycle, we need to handle the post-imp
 - **API Handoff Layer (`src/github/api.ts`)**: Expanded to safely close issues and generate large payload summaries.
 
 ## Data Access Changes
-- Interacts via GitHub API to fetch the PR's original parent issue number (either via branch name mappings or body parsings) so it can sync labels (`state:reworking`, `state:done`) back onto the source-of-truth Issue.
+- Interacts via GitHub API to fetch PR review comments, review summaries, changed files, and the PR diff so the rework pass can use concrete PR context instead of a free-form one-line command.
 
 ## Workflow / State Changes
 - State loops during PR:
   - `implementing` (via AI PR Creation) ➔ `in-review`
-  - `in-review` + `needs rework: ...` ➔ `reworking`
+  - `in-review` + `ready for rework` ➔ `reworking`
   - `reworking` (via AI PR update) ➔ `in-review`
   - `in-review` + (Human Merges) ➔ `done` (closes parent Issue).
 
@@ -32,9 +32,9 @@ To fully support the AI-First workflow lifecycle, we need to handle the post-imp
 - State Machine unit tests verifying the new PR-based state transition loops mapping accurately logic without crashing.
 
 ## Rollout Steps
-1. **API Enhancements**: Expand `src/github/api.ts` to include `closeIssue(issueNumber)`, `getPullRequestDiff(prNumber)`, and `postPRComment(...)`.
+1. **API Enhancements**: Expand `src/github/api.ts` to include `closeIssue(issueNumber)`, `getPullRequestDiff(prNumber)`, review-comment retrieval, and `postPRComment(...)`.
 2. **State Machine Additions**: Expand `src/core/state-machine.ts` with the new allowed PR-domain transitions.
-3. **PR Action Entrypoint (`pr-action.ts`)**: Create the Node action file to securely decode `.yml` provided PR context data (checking if PR was authored by our specified Bot Identity).
+3. **PR Rework Context**: Aggregate PR review comments, summaries, changed files, and diff into a single rework context before calling the agent.
 4. **Draft PR Workflow (`ai-pr-orchestrator.yml`)**: Configure the trigger specifically on PR comments and the PR `closed` event.
 5. **Merge Handoff**: Construct the logic ensuring a merged PR calculates the file diff summary and posts it to the parent issue, concluding with an auto-close.
 
@@ -47,7 +47,7 @@ To fully support the AI-First workflow lifecycle, we need to handle the post-imp
   - *Mitigation*: Implement a strict truncation utility when generating the PR completion summary.
 
 ## Definition of Done
-- [ ] PR Action triggers on `needs rework: *`.
+- [ ] PR Action triggers on `ready for rework`.
 - [ ] Merge Action triggers on PR Close/Merge.
 - [ ] Parent Issue is successfully closed automatically.
 - [ ] Strict isolation logic prevents autonomous rewrites of Human PRs.
