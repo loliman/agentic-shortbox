@@ -354,6 +354,73 @@ describe('BotController', () => {
       }));
     });
 
+    it('uses same-comment instructions for refinement requests', async () => {
+      const mockGit = {
+        checkoutNewBranch: jest.fn(),
+        applyFileSystemChanges: jest.fn(),
+        commitAndPush: jest.fn()
+      };
+      (GitManager as jest.Mock).mockImplementation(() => mockGit);
+      (LLMClient as jest.Mock).mockImplementation(() => ({
+        generateCode: jest.fn().mockResolvedValue([{ path: 'src/foo.ts', content: 'bar' }])
+      }));
+
+      mockOctokit.rest.pulls.get.mockResolvedValueOnce({ data: { head: { ref: 'existing-branch' } } });
+      mockOctokit.graphql.mockResolvedValueOnce({
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              nodes: []
+            }
+          }
+        }
+      });
+      mockOctokit.rest.issues.listComments.mockResolvedValueOnce({
+        data: [{ user: { type: 'User', login: 'bob' }, body: 'General discussion about copy tone.' }]
+      });
+      mockOctokit.rest.pulls.listFiles.mockResolvedValueOnce({
+        data: [{ filename: 'src/foo.ts', patch: '@@ -1 +1 @@' }]
+      });
+      mockOctokit.rest.pulls.get.mockResolvedValueOnce({ data: 'diff --git a/src/foo.ts b/src/foo.ts' });
+      (fs.existsSync as jest.Mock).mockReturnValue(true);
+      (fs.readFileSync as jest.Mock).mockReturnValue('const message = "hello";\n');
+
+      const payload = {
+        number: 99,
+        author: 'bob',
+        body: 'ready for refinement make the bot tone friendlier and more concise',
+        labels: ['state:in-review'],
+        isPR: true
+      };
+      await controller.handleCommand(payload);
+
+      const mockClient = (LLMClient as jest.Mock).mock.results.at(-1)?.value;
+      expect(mockClient.generateCode).toHaveBeenCalledWith(
+        'PR Refinement for #99',
+        expect.stringContaining('make the bot tone friendlier and more concise'),
+        expect.stringContaining('General discussion about copy tone.')
+      );
+      expect(mockGit.commitAndPush).toHaveBeenCalledWith('PR Refinement: apply requested polish', 'existing-branch');
+      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+        issue_number: 99,
+        body: expect.stringContaining('✨ **Refinement applied**')
+      }));
+    });
+
+    it('requires inline instructions for refinement requests', async () => {
+      const payload = {
+        number: 99,
+        author: 'bob',
+        body: 'ready for refinement',
+        labels: ['state:in-review'],
+        isPR: true
+      };
+
+      await expect(controller.handleCommand(payload)).rejects.toThrow(
+        '`ready for refinement` requires an instruction in the same comment.'
+      );
+    });
+
     it('fails when no open review threads or discussion feedback remain', async () => {
       const mockGit = {
         checkoutNewBranch: jest.fn(),

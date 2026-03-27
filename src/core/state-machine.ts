@@ -32,7 +32,7 @@ export function extractCurrentState(labels: string[]): WorkflowState {
  */
 export function evaluateTransition(
   currentState: WorkflowState,
-  commandType: 'define' | 'plan' | 'implement' | 'rework' | 'review' | 'done'
+  commandType: 'define' | 'plan' | 'implement' | 'rework' | 'refinement' | 'review' | 'done'
 ): WorkflowState {
   if (currentState === 'idle') {
     if (commandType === 'define') return 'defining';
@@ -67,6 +67,7 @@ export function evaluateTransition(
 
   if (currentState === 'in-review') {
     if (commandType === 'rework') return 'reworking';
+    if (commandType === 'refinement') return 'reworking';
     if (commandType === 'done') return 'done';
     throw new IllegalTransitionError(currentState, commandType);
   }

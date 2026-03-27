@@ -7,7 +7,7 @@ Handle the post-implementation review cycle. This allows human reviewers to inst
 If the AI makes a mistake during implementation, developers can leave review feedback directly on the PR and then trigger a focused rework pass rather than starting over completely or fixing it manually.
 
 ## Scope
-- **In Scope:** GitHub Action listening to Pull Request review feedback and PR comments. Parsing `ready for rework`. Collecting review feedback, changed files, and PR diff as the rework context. Automatically closing the parent Issue and summarizing work upon Merge.
+- **In Scope:** GitHub Action listening to Pull Request review feedback and PR comments. Parsing `ready for rework` and `ready for refinement <instruction>`. Collecting review feedback, changed files, and PR diff as the rework context, or broader PR context plus inline refinement instruction for refinement. Automatically closing the parent Issue and summarizing work upon Merge.
 - **Out of Scope (Non-Goals):** Performing GitHub Code-QL scanning or continuous integration test running.
 
 ## Domain Context
@@ -15,7 +15,8 @@ Implements Section 9.3 (Review and Rework) and Section 9.4 (Completion) of `AI_F
 
 ## User Scenarios
 1. **Given** an open PR made by the AI, **When** a human leaves review feedback and then either submits `ready for rework` as the review text or comments `ready for rework` on the PR, **Then** the AI collects that PR feedback and amends its commit accordingly.
-2. **Given** a human merges the PR, **Then** the AI calculates the final diff, posts a summary to the parent issue, and closes the issue.
+2. **Given** an open PR made by the AI, **When** a human comments `ready for refinement make the bot text warmer and shorter`, **Then** the AI uses that inline instruction plus the current PR context to apply broader polish.
+3. **Given** a human merges the PR, **Then** the AI calculates the final diff, posts a summary to the parent issue, and closes the issue.
 
 ## Affected Areas
 - `.github/workflows/ai-pr-orchestrator.yml` (NEW)
@@ -41,5 +42,6 @@ Implements Section 9.3 (Review and Rework) and Section 9.4 (Completion) of `AI_F
 
 ## Definition of Done
 - [ ] PR Action triggers on `ready for rework`.
+- [ ] PR Action triggers on `ready for refinement <instruction>`.
 - [ ] Merge Action triggers on PR Close/Merge.
 - [ ] Parent Issue is successfully closed automatically.

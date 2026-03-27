@@ -103,6 +103,15 @@ export class BotController {
         throw e;
       }
     }
+
+    if (payload.isPR && command?.type === 'refinement') {
+      try {
+        return await this.handleReviewRefinement(payload, command.additionalText || '');
+      } catch(e: any) {
+        await this.postStatus(payload.number, this.formatSystemError(e));
+        throw e;
+      }
+    }
     
     // Parse generic action commands
     if (!command) return core.info('[Bot] No AI command detected in comment.');
@@ -266,6 +275,33 @@ export class BotController {
      
      await this.postStatus(payload.number, `✅ Addressed feedback pushed to ${headBranch}.`);
   }
+
+  async handleReviewRefinement(payload: any, refinementInstruction: string) {
+     if (!refinementInstruction.trim()) {
+      throw new Error('`ready for refinement` requires an instruction in the same comment. Put your refinement request after the command.');
+     }
+
+     await this.postStatus(payload.number, 'General refinement request detected. I am collecting the current PR context before applying the requested improvements...');
+
+     const pr = await this.octokit.rest.pulls.get({ ...this.ctx, pull_number: payload.number });
+     const headBranch = pr.data.head.ref;
+
+     const git = new GitManager(process.env.GITHUB_TOKEN || '');
+     await git.checkoutNewBranch(headBranch);
+     const refinementContext = await this.buildPullRequestRefinementContext(payload.number, refinementInstruction);
+
+     const agent = new LLMClient();
+     const codeOps = await agent.generateCode(
+       `PR Refinement for #${payload.number}`,
+       `Apply this general refinement request exactly: ${refinementInstruction}`,
+       refinementContext
+     );
+
+     await git.applyFileSystemChanges(codeOps);
+     await git.commitAndPush('PR Refinement: apply requested polish', headBranch);
+     await this.postStatus(payload.number, this.buildRefinementSummaryComment(codeOps, refinementInstruction));
+     await this.postStatus(payload.number, `✅ Refinement updates pushed to ${headBranch}.`);
+  }
   
   // -- Utilities --
   private async postStatus(issueNumber: number, body: string) {
@@ -365,6 +401,60 @@ export class BotController {
     ].join('\n');
   }
 
+  private async buildPullRequestRefinementContext(prNumber: number, refinementInstruction: string) {
+    const [openReviewThreads, issueComments, files, diff] = await Promise.all([
+      this.fetchOpenReviewThreads(prNumber),
+      this.octokit.rest.issues.listComments({ ...this.ctx, issue_number: prNumber, per_page: 100 }),
+      this.octokit.rest.pulls.listFiles({ ...this.ctx, pull_number: prNumber, per_page: 100 }),
+      this.fetchPullRequestDiff(prNumber),
+    ]);
+
+    const reviewCommentLines = openReviewThreads.map((thread) => {
+      const path = thread.path ? `file=${thread.path}` : 'file=unknown';
+      const line = thread.line ? ` line=${thread.line}` : '';
+      return `- ${path}${line}: ${thread.body}`;
+    });
+
+    const discussionLines = issueComments.data
+      .filter((comment: any) => comment.user?.type !== 'Bot')
+      .filter((comment: any) => {
+        const body = typeof comment.body === 'string' ? comment.body.trim().toLowerCase() : '';
+        return body && !body.startsWith('ready for rework') && !body.startsWith('ready for refinement');
+      })
+      .map((comment: any) => `- @${comment.user?.login || 'unknown'}: ${String(comment.body || '').trim()}`);
+
+    const referencedPaths = new Set<string>();
+    for (const thread of openReviewThreads) {
+      if (thread.path) referencedPaths.add(thread.path);
+    }
+    for (const file of files.data) {
+      if (typeof file.filename === 'string' && file.filename) {
+        referencedPaths.add(file.filename);
+      }
+    }
+
+    const workspaceFiles = Array.from(referencedPaths)
+      .map((filePath) => this.readWorkspaceFileForReview(filePath))
+      .filter((entry): entry is string => Boolean(entry));
+
+    return [
+      '=== REFINEMENT INSTRUCTION ===',
+      refinementInstruction,
+      '',
+      '=== OPEN REVIEW FEEDBACK ===',
+      reviewCommentLines.length ? reviewCommentLines.join('\n') : 'No open inline review comments found.',
+      '',
+      '=== GENERAL PR DISCUSSION ===',
+      discussionLines.length ? discussionLines.join('\n') : 'No general PR discussion comments found.',
+      '',
+      '=== CURRENT FILE CONTENTS ===',
+      workspaceFiles.length ? workspaceFiles.join('\n\n') : 'No local file content available.',
+      '',
+      '=== PR DIFF ===',
+      diff || 'No diff available.',
+    ].join('\n');
+  }
+
   private buildReworkSummaryComment(
     codeOps: { path: string, content: string }[],
     reworkContext: string
@@ -377,6 +467,21 @@ export class BotController {
       processedFeedback.length
         ? ['**Processed feedback:**', processedFeedback.join('\n')].join('\n')
         : '**Processed feedback:**\n- Review context was collected and applied.',
+      changedFiles.length
+        ? ['**Updated files:**', changedFiles.join('\n')].join('\n')
+        : '**Updated files:**\n- No file list available.',
+    ].join('\n\n');
+  }
+
+  private buildRefinementSummaryComment(
+    codeOps: { path: string, content: string }[],
+    refinementInstruction: string
+  ) {
+    const changedFiles = codeOps.map((op) => `- \`${op.path}\``);
+
+    return [
+      '✨ **Refinement applied**',
+      ['**Instruction:**', refinementInstruction].join('\n'),
       changedFiles.length
         ? ['**Updated files:**', changedFiles.join('\n')].join('\n')
         : '**Updated files:**\n- No file list available.',
@@ -496,8 +601,9 @@ export class BotController {
         '1. Leave inline review comments or submit a full review on the PR.',
         '2. Either submit a review with the exact text `ready for rework` or comment `ready for rework` on the PR when the feedback set is complete.',
         '3. I will collect the review feedback, changed files, and diff, then apply only that rework.',
+        '4. For broader polish, comment `ready for refinement <your instruction>` on the PR.',
       ].join('\n'),
-      ['**Example:**', '`ready for rework`'].join('\n'),
+      ['**Examples:**', '`ready for rework`\n`ready for refinement make all bot copy warmer and more concise`'].join('\n'),
       `Reviewer: @${author}`,
     ].join('\n\n');
   }

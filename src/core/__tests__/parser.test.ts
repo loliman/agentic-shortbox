@@ -19,6 +19,14 @@ describe('Command Parser', () => {
     expect(parseCommand('  READY FOR REWORK  ')).toEqual({ type: 'rework' });
   });
 
+  it('parses "ready for refinement" and captures trailing instructions', () => {
+    expect(parseCommand('ready for refinement')).toEqual({ type: 'refinement', additionalText: '' });
+    expect(parseCommand('ready for refinement please make the tone friendlier')).toEqual({
+      type: 'refinement',
+      additionalText: 'please make the tone friendlier',
+    });
+  });
+
   it('ignores conversational text', () => {
     expect(parseCommand('Hey guys, I think we are ready to plan this soon')).toBeNull();
     expect(parseCommand('This is a normal comment.')).toBeNull();
