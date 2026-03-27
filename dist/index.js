@@ -51880,6 +51880,7 @@ class BotController {
         const codeOps = await agent.generateCode(`PR Rework for #${payload.number}`, 'Apply only the requested review feedback from the PR context. Prefer the exact files and lines referenced in the review feedback. Keep all unrelated code unchanged.', reworkContext);
         await git.applyFileSystemChanges(codeOps);
         await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
+        await this.postStatus(payload.number, this.buildReworkSummaryComment(codeOps, reworkContext));
         await this.postStatus(payload.number, `✅ Addressed feedback pushed to ${headBranch}.`);
     }
     // -- Utilities --
@@ -51975,6 +51976,32 @@ class BotController {
             '=== PR DIFF ===',
             diff || 'No diff available.',
         ].join('\n');
+    }
+    buildReworkSummaryComment(codeOps, reworkContext) {
+        const processedFeedback = this.extractProcessedFeedback(reworkContext);
+        const changedFiles = codeOps.map((op) => `- \`${op.path}\``);
+        return [
+            '🛠️ **Rework applied**',
+            processedFeedback.length
+                ? ['**Processed feedback:**', processedFeedback.join('\n')].join('\n')
+                : '**Processed feedback:**\n- Review context was collected and applied.',
+            changedFiles.length
+                ? ['**Updated files:**', changedFiles.join('\n')].join('\n')
+                : '**Updated files:**\n- No file list available.',
+        ].join('\n\n');
+    }
+    extractProcessedFeedback(reworkContext) {
+        const feedbackSection = reworkContext
+            .split('=== PR REVIEW FEEDBACK ===\n')[1]
+            ?.split('\n\n=== PR REVIEW SUMMARIES ===')[0]
+            ?.trim();
+        if (!feedbackSection || feedbackSection === 'No inline review comments found.') {
+            return [];
+        }
+        return feedbackSection
+            .split('\n')
+            .filter((line) => line.startsWith('- '))
+            .slice(0, 6);
     }
     readWorkspaceFileForReview(filePath) {
         const fullPath = path_1.default.resolve(process.cwd(), filePath);

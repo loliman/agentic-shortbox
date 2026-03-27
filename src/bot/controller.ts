@@ -236,6 +236,7 @@ export class BotController {
      );
      await git.applyFileSystemChanges(codeOps);
      await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
+     await this.postStatus(payload.number, this.buildReworkSummaryComment(codeOps, reworkContext));
      
      await this.postStatus(payload.number, `✅ Addressed feedback pushed to ${headBranch}.`);
   }
@@ -347,6 +348,40 @@ export class BotController {
       '=== PR DIFF ===',
       diff || 'No diff available.',
     ].join('\n');
+  }
+
+  private buildReworkSummaryComment(
+    codeOps: { path: string, content: string }[],
+    reworkContext: string
+  ) {
+    const processedFeedback = this.extractProcessedFeedback(reworkContext);
+    const changedFiles = codeOps.map((op) => `- \`${op.path}\``);
+
+    return [
+      '🛠️ **Rework applied**',
+      processedFeedback.length
+        ? ['**Processed feedback:**', processedFeedback.join('\n')].join('\n')
+        : '**Processed feedback:**\n- Review context was collected and applied.',
+      changedFiles.length
+        ? ['**Updated files:**', changedFiles.join('\n')].join('\n')
+        : '**Updated files:**\n- No file list available.',
+    ].join('\n\n');
+  }
+
+  private extractProcessedFeedback(reworkContext: string) {
+    const feedbackSection = reworkContext
+      .split('=== PR REVIEW FEEDBACK ===\n')[1]
+      ?.split('\n\n=== PR REVIEW SUMMARIES ===')[0]
+      ?.trim();
+
+    if (!feedbackSection || feedbackSection === 'No inline review comments found.') {
+      return [];
+    }
+
+    return feedbackSection
+      .split('\n')
+      .filter((line) => line.startsWith('- '))
+      .slice(0, 6);
   }
 
   private readWorkspaceFileForReview(filePath: string) {
