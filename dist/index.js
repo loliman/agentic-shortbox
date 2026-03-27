@@ -51906,27 +51906,21 @@ class BotController {
         });
     }
     async buildPullRequestReworkContext(prNumber) {
-        const [reviewComments, issueComments, reviews, files, diff] = await Promise.all([
-            this.octokit.rest.pulls.listReviewComments({ ...this.ctx, pull_number: prNumber, per_page: 100 }),
+        const [openReviewThreads, issueComments, files, diff] = await Promise.all([
+            this.fetchOpenReviewThreads(prNumber),
             this.octokit.rest.issues.listComments({ ...this.ctx, issue_number: prNumber, per_page: 100 }),
-            this.octokit.rest.pulls.listReviews({ ...this.ctx, pull_number: prNumber, per_page: 100 }),
             this.octokit.rest.pulls.listFiles({ ...this.ctx, pull_number: prNumber, per_page: 100 }),
             this.fetchPullRequestDiff(prNumber),
         ]);
-        const reviewCommentLines = reviewComments.data
-            .filter((comment) => comment.user?.type !== 'Bot')
-            .map((comment) => {
-            const path = comment.path ? `file=${comment.path}` : 'file=unknown';
-            const line = comment.line ? ` line=${comment.line}` : '';
-            const hunk = typeof comment.diff_hunk === 'string' && comment.diff_hunk.trim()
-                ? `\n  hunk:\n${comment.diff_hunk}`
+        const reviewCommentLines = openReviewThreads.map((thread) => {
+            const path = thread.path ? `file=${thread.path}` : 'file=unknown';
+            const line = thread.line ? ` line=${thread.line}` : '';
+            const hunk = typeof thread.diffHunk === 'string' && thread.diffHunk.trim()
+                ? `\n  hunk:\n${thread.diffHunk}`
                 : '';
-            const body = typeof comment.body === 'string' ? comment.body.trim() : '';
+            const body = typeof thread.body === 'string' ? thread.body.trim() : '';
             return `- ${path}${line}: ${body}${hunk}`;
         });
-        const reviewSummaryLines = reviews.data
-            .filter((review) => review.user?.type !== 'Bot' && typeof review.body === 'string' && review.body.trim())
-            .map((review) => `- state=${review.state}: ${review.body.trim()}`);
         const discussionLines = issueComments.data
             .filter((comment) => comment.user?.type !== 'Bot')
             .filter((comment) => {
@@ -51939,9 +51933,9 @@ class BotController {
             return `- ${file.filename}\n${patch}`;
         });
         const referencedPaths = new Set();
-        for (const comment of reviewComments.data) {
-            if (comment.user?.type !== 'Bot' && typeof comment.path === 'string' && comment.path) {
-                referencedPaths.add(comment.path);
+        for (const thread of openReviewThreads) {
+            if (typeof thread.path === 'string' && thread.path) {
+                referencedPaths.add(thread.path);
             }
         }
         for (const file of files.data) {
@@ -51953,16 +51947,12 @@ class BotController {
             .map((filePath) => this.readWorkspaceFileForReview(filePath))
             .filter((entry) => Boolean(entry));
         if (reviewCommentLines.length === 0 &&
-            reviewSummaryLines.length === 0 &&
             discussionLines.length === 0) {
-            throw new Error('No PR feedback was found. Leave review comments or PR discussion feedback first, then comment `ready for rework`.');
+            throw new Error('No open PR feedback was found. Leave unresolved review feedback or PR discussion feedback first, then trigger `ready for rework`.');
         }
         return [
-            '=== PR REVIEW FEEDBACK ===',
-            reviewCommentLines.length ? reviewCommentLines.join('\n') : 'No inline review comments found.',
-            '',
-            '=== PR REVIEW SUMMARIES ===',
-            reviewSummaryLines.length ? reviewSummaryLines.join('\n') : 'No review summaries found.',
+            '=== OPEN PR REVIEW FEEDBACK ===',
+            reviewCommentLines.length ? reviewCommentLines.join('\n') : 'No open inline review comments found.',
             '',
             '=== PR DISCUSSION COMMENTS ===',
             discussionLines.length ? discussionLines.join('\n') : 'No PR discussion comments found.',
@@ -51992,16 +51982,68 @@ class BotController {
     }
     extractProcessedFeedback(reworkContext) {
         const feedbackSection = reworkContext
-            .split('=== PR REVIEW FEEDBACK ===\n')[1]
-            ?.split('\n\n=== PR REVIEW SUMMARIES ===')[0]
+            .split('=== OPEN PR REVIEW FEEDBACK ===\n')[1]
+            ?.split('\n\n=== PR DISCUSSION COMMENTS ===')[0]
             ?.trim();
-        if (!feedbackSection || feedbackSection === 'No inline review comments found.') {
+        if (!feedbackSection || feedbackSection === 'No open inline review comments found.') {
             return [];
         }
         return feedbackSection
             .split('\n')
             .filter((line) => line.startsWith('- '))
             .slice(0, 6);
+    }
+    async fetchOpenReviewThreads(prNumber) {
+        if (typeof this.octokit.graphql !== 'function') {
+            return [];
+        }
+        const result = await this.octokit.graphql(`
+        query OpenReviewThreads($owner: String!, $repo: String!, $number: Int!) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              reviewThreads(first: 100) {
+                nodes {
+                  isResolved
+                  isOutdated
+                  comments(first: 20) {
+                    nodes {
+                      body
+                      path
+                      line
+                      originalLine
+                      diffHunk
+                      author {
+                        login
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `, {
+            owner: this.ctx.owner,
+            repo: this.ctx.repo,
+            number: prNumber,
+        });
+        const nodes = (result?.repository?.pullRequest?.reviewThreads?.nodes || []);
+        return nodes
+            .filter((thread) => !thread?.isResolved && !thread?.isOutdated)
+            .map((thread) => {
+            const comments = (thread?.comments?.nodes || []).filter((comment) => comment?.author?.login && typeof comment.body === 'string');
+            const latestComment = comments[comments.length - 1];
+            if (!latestComment) {
+                return null;
+            }
+            return {
+                body: latestComment.body,
+                path: latestComment.path,
+                line: latestComment.line || latestComment.originalLine,
+                diffHunk: latestComment.diffHunk || '',
+            };
+        })
+            .filter((thread) => thread !== null);
     }
     readWorkspaceFileForReview(filePath) {
         const fullPath = path_1.default.resolve(process.cwd(), filePath);
