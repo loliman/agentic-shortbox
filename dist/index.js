@@ -32722,6 +32722,8 @@ class CodexRunner {
             commandInstruction: [
                 'Apply only the open review feedback listed below.',
                 'Resolve the requested changes in the local repository.',
+                'Do not ask clarifying questions.',
+                'If the feedback is insufficient or ambiguous, fail instead of asking follow-up questions.',
                 'Do not make unrelated edits.',
                 '',
                 'Open Review Feedback:',
@@ -32751,6 +32753,8 @@ class CodexRunner {
             commandInstruction: [
                 'Apply the following refinement request in the local repository.',
                 'You must inspect the repository yourself and make only the changes needed for this refinement.',
+                'Do not ask clarifying questions.',
+                'If the refinement instruction is insufficient or ambiguous, fail instead of asking follow-up questions.',
                 '',
                 'Refinement Instruction:',
                 instruction,
@@ -33393,7 +33397,10 @@ class BotController {
         ]);
         const agent = new runner_1.CodexRunner();
         const result = await agent.applyReviewRework(featureContext.title, featureContext.spec, featureContext.plan, reviewFeedback, config.model);
-        await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
+        const pushed = await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
+        if (!pushed) {
+            throw new Error('Codex did not produce any committed file changes for this rework. Aborting instead of claiming success.');
+        }
         await this.postStatus(payload.number, this.buildEditSummaryComment('🛠️ **Rework applied**', result.summary, result.changedFiles));
         await this.postStatus(payload.number, `✅ Addressed feedback pushed to ${headBranch}.`);
     }
@@ -33413,7 +33420,10 @@ class BotController {
         const featureContext = await this.getPullRequestFeatureContext(payload.number);
         const agent = new runner_1.CodexRunner();
         const result = await agent.applyReviewRefinement(featureContext.title, featureContext.spec, featureContext.plan, refinementInstruction, config.model);
-        await git.commitAndPush('PR Refinement: apply requested polish', headBranch);
+        const pushed = await git.commitAndPush('PR Refinement: apply requested polish', headBranch);
+        if (!pushed) {
+            throw new Error('Codex did not produce any committed file changes for this refinement. Aborting instead of claiming success.');
+        }
         await this.postStatus(payload.number, this.buildEditSummaryComment('✨ **Refinement applied**', result.summary, result.changedFiles, refinementInstruction));
         await this.postStatus(payload.number, `✅ Refinement updates pushed to ${headBranch}.`);
     }
@@ -33698,13 +33708,16 @@ class GitManager {
             core.info(`[GitManager] Pushing to origin ${branchName}...`);
             // The native checkout action sets up auth for push natively:
             await execAsync(`git push -u origin HEAD:${branchName}`, { cwd: this.workspace });
+            return true;
         }
         catch (err) {
             if (err.stdout && err.stdout.includes('nothing to commit')) {
                 core.info('[GitManager] Nothing to commit. Skipping push.');
+                return false;
             }
             else if (err.message && err.message.includes('nothing to commit')) {
                 core.info('[GitManager] Nothing to commit. Skipping push.');
+                return false;
             }
             else {
                 throw err;

@@ -57,7 +57,7 @@ export class GitManager {
     }
   }
 
-  async commitAndPush(message: string, branchName: string): Promise<void> {
+  async commitAndPush(message: string, branchName: string): Promise<boolean> {
     core.info(`[GitManager] Committing changes...`);
     await execAsync(`git add .`, { cwd: this.workspace });
     
@@ -67,11 +67,14 @@ export class GitManager {
        core.info(`[GitManager] Pushing to origin ${branchName}...`);
        // The native checkout action sets up auth for push natively:
        await execAsync(`git push -u origin HEAD:${branchName}`, { cwd: this.workspace });
+       return true;
     } catch (err: any) {
        if (err.stdout && err.stdout.includes('nothing to commit')) {
           core.info('[GitManager] Nothing to commit. Skipping push.');
+          return false;
        } else if (err.message && err.message.includes('nothing to commit')) {
           core.info('[GitManager] Nothing to commit. Skipping push.');
+          return false;
        } else {
           throw err;
        }

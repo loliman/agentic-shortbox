@@ -97,6 +97,22 @@ describe('CodexRunner', () => {
     expect(executeSpy.mock.calls[0][0]).toContain('Implement the feature directly in the local repository');
   });
 
+  it('forbids follow-up questions during rework and refinement flows', async () => {
+    const runner = new CodexRunner();
+    const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '{"summary":"Done","changedFiles":["src/foo.ts"]}',
+      items: [],
+    });
+
+    await runner.applyReviewRework('Feature', 'Spec body', '# Plan', 'file=src/foo.ts line=12: simplify this', 'fast');
+    await runner.applyReviewRefinement('Feature', 'Spec body', '# Plan', 'make the message warmer', 'fast');
+
+    expect(executeSpy.mock.calls[0][0]).toContain('Do not ask clarifying questions.');
+    expect(executeSpy.mock.calls[0][0]).toContain('If the feedback is insufficient or ambiguous, fail instead of asking follow-up questions.');
+    expect(executeSpy.mock.calls[1][0]).toContain('Do not ask clarifying questions.');
+    expect(executeSpy.mock.calls[1][0]).toContain('If the refinement instruction is insufficient or ambiguous, fail instead of asking follow-up questions.');
+  });
+
   it('surfaces Codex SDK failures', async () => {
     const runner = new CodexRunner();
     jest.spyOn(runner as any, 'executeStructuredTurn').mockRejectedValue(new Error('codex failed hard'));

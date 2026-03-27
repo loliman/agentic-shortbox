@@ -179,6 +179,8 @@ export class CodexRunner {
         commandInstruction: [
           'Apply only the open review feedback listed below.',
           'Resolve the requested changes in the local repository.',
+          'Do not ask clarifying questions.',
+          'If the feedback is insufficient or ambiguous, fail instead of asking follow-up questions.',
           'Do not make unrelated edits.',
           '',
           'Open Review Feedback:',
@@ -213,6 +215,8 @@ export class CodexRunner {
         commandInstruction: [
           'Apply the following refinement request in the local repository.',
           'You must inspect the repository yourself and make only the changes needed for this refinement.',
+          'Do not ask clarifying questions.',
+          'If the refinement instruction is insufficient or ambiguous, fail instead of asking follow-up questions.',
           '',
           'Refinement Instruction:',
           instruction,

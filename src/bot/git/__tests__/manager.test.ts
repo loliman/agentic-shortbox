@@ -115,7 +115,7 @@ describe('GitManager', () => {
     it('performs full commit and push lifecycle', async () => {
       execAsyncMock.mockResolvedValue({});
       
-      await git.commitAndPush('Test Commit', 'ai-branch');
+      await expect(git.commitAndPush('Test Commit', 'ai-branch')).resolves.toBe(true);
 
       expect(execAsyncMock).toHaveBeenCalledWith('git add .', expect.any(Object));
       expect(execAsyncMock).toHaveBeenCalledWith("git commit -m 'Test Commit'", expect.any(Object));
@@ -125,7 +125,7 @@ describe('GitManager', () => {
     it('escapes quotes safely in commit messages', async () => {
       execAsyncMock.mockResolvedValue({});
 
-      await git.commitAndPush(`PR Feedback Fix: change "we" to "I"`, 'ai-branch');
+      await expect(git.commitAndPush(`PR Feedback Fix: change "we" to "I"`, 'ai-branch')).resolves.toBe(true);
 
       expect(execAsyncMock).toHaveBeenCalledWith(
         `git commit -m 'PR Feedback Fix: change "we" to "I"'`,
@@ -137,7 +137,7 @@ describe('GitManager', () => {
       execAsyncMock.mockResolvedValueOnce({}); // git add
       execAsyncMock.mockRejectedValueOnce({ stdout: 'nothing to commit, working tree clean' }); // git commit fails
 
-      await git.commitAndPush('Test Commit', 'ai-branch');
+      await expect(git.commitAndPush('Test Commit', 'ai-branch')).resolves.toBe(false);
 
       expect(execAsyncMock).not.toHaveBeenCalledWith('git push -u origin HEAD:ai-branch', expect.any(Object));
     });

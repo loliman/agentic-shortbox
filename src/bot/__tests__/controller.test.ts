@@ -147,7 +147,7 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
-      commitAndPush: jest.fn(),
+      commitAndPush: jest.fn().mockResolvedValue(true),
     };
     (GitManager as jest.Mock).mockImplementation(() => mockGit);
     mockOctokit.rest.issues.listComments
@@ -185,7 +185,7 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
-      commitAndPush: jest.fn(),
+      commitAndPush: jest.fn().mockResolvedValue(true),
     };
     (GitManager as jest.Mock).mockImplementation(() => mockGit);
     mockOctokit.graphql.mockResolvedValueOnce({
@@ -273,7 +273,7 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
-      commitAndPush: jest.fn(),
+      commitAndPush: jest.fn().mockResolvedValue(true),
     };
     (GitManager as jest.Mock).mockImplementation(() => mockGit);
     mockOctokit.rest.issues.get.mockResolvedValueOnce({ data: { title: 'Feature Title', body: 'Feature Spec' } });
@@ -299,6 +299,62 @@ describe('BotController', () => {
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 99,
       body: expect.stringContaining('🤖 **Refinement started**'),
+    }));
+  });
+
+  it('fails rework instead of claiming success when no commit is produced', async () => {
+    (CodexRunner as jest.Mock).mockImplementation(() => ({
+      applyReviewRework: jest.fn().mockResolvedValue({
+        summary: 'Applied the requested review changes.',
+        changedFiles: ['src/foo.ts'],
+      }),
+    }));
+
+    const mockGit = {
+      checkoutNewBranch: jest.fn(),
+      commitAndPush: jest.fn().mockResolvedValue(false),
+    };
+    (GitManager as jest.Mock).mockImplementation(() => mockGit);
+    mockOctokit.graphql.mockResolvedValueOnce({
+      repository: {
+        pullRequest: {
+          reviewThreads: {
+            nodes: [
+              {
+                isResolved: false,
+                isOutdated: false,
+                comments: {
+                  nodes: [
+                    {
+                      body: 'Please simplify this message.',
+                      path: 'src/foo.ts',
+                      line: 12,
+                      originalLine: 12,
+                      diffHunk: '@@ -12 +12 @@',
+                      author: { login: 'bob' },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+    mockOctokit.rest.issues.get.mockResolvedValueOnce({ data: { title: 'Feature Title', body: 'Feature Spec' } });
+    mockOctokit.rest.issues.listComments.mockResolvedValueOnce({ data: [{ body: '**Implementation Plan**\n\n# Plan' }] });
+
+    await expect(controller.handleCommand({
+      number: 99,
+      author: 'bob',
+      body: 'ready for rework',
+      labels: ['state:in-review', 'model:fast'],
+      isPR: true,
+    })).rejects.toThrow('Codex did not produce any committed file changes for this rework.');
+
+    expect(mockOctokit.rest.issues.createComment).not.toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 99,
+      body: expect.stringContaining('✅ Addressed feedback pushed'),
     }));
   });
 
