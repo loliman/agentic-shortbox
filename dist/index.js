@@ -32600,6 +32600,7 @@ const os_1 = __importDefault(__nccwpck_require__(857));
 const path_1 = __importDefault(__nccwpck_require__(6928));
 const child_process_1 = __nccwpck_require__(5317);
 const core = __importStar(__nccwpck_require__(7484));
+const DEFAULT_OPENAI_BASE_URL = 'https://adesso-ai-hub.3asabc.de/v1';
 class MissingConfigurationError extends Error {
     constructor(message) {
         super(message);
@@ -32773,6 +32774,7 @@ class CodexRunner {
         core.info(`[CodexRunner] OPENAI_API_KEY present: ${codexEnv.OPENAI_API_KEY ? 'yes' : 'no'}`);
         core.info(`[CodexRunner] OPENAI_API_KEY length: ${codexEnv.OPENAI_API_KEY?.length ?? 0}`);
         core.info(`[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: ${codexEnv.OPENAI_API_KEY?.startsWith('sk-') ? 'yes' : 'no'}`);
+        core.info(`[CodexRunner] OPENAI_BASE_URL: ${codexEnv.OPENAI_BASE_URL ?? '(not set)'}`);
         core.info('[CodexRunner] Prompt begin');
         core.info(prompt);
         core.info('[CodexRunner] Prompt end');
@@ -33070,6 +33072,7 @@ class CodexRunner {
         const tempDir = process.env.TMPDIR || process.env.TMP || process.env.TEMP || os_1.default.tmpdir();
         const codexHome = process.env.CODEX_HOME || path_1.default.join(homeDir, '.codex');
         const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
+        const openAiBaseUrl = process.env.OPENAI_BASE_URL?.trim() || DEFAULT_OPENAI_BASE_URL;
         fs_1.default.mkdirSync(tempDir, { recursive: true });
         fs_1.default.mkdirSync(codexHome, { recursive: true });
         const env = {
@@ -33079,7 +33082,7 @@ class CodexRunner {
             TMP: process.env.TMP || tempDir,
             TEMP: process.env.TEMP || tempDir,
             OPENAI_API_KEY: openAiApiKey,
-            OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+            OPENAI_BASE_URL: openAiBaseUrl,
             OPENAI_ORG_ID: process.env.OPENAI_ORG_ID,
             OPENAI_PROJECT: process.env.OPENAI_PROJECT,
             CODEX_HOME: codexHome,

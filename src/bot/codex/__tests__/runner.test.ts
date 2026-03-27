@@ -78,6 +78,7 @@ describe('CodexRunner', () => {
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Structured output source: output-last-message');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_API_KEY length: 8');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: no');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_BASE_URL: https://adesso-ai-hub.3asabc.de/v1');
   });
 
   it('asks Codex to gather repository context itself for implementation', async () => {
@@ -216,6 +217,7 @@ describe('CodexRunner', () => {
       expect.objectContaining({
         env: expect.objectContaining({
           OPENAI_API_KEY: 'test-key',
+          OPENAI_BASE_URL: 'https://adesso-ai-hub.3asabc.de/v1',
           PATH: expect.stringContaining('/usr/bin'),
           HOME: '/home/tester',
           TMPDIR: '/tmp',
@@ -228,6 +230,30 @@ describe('CodexRunner', () => {
     );
     expect(fs.mkdirSync).toHaveBeenCalledWith('/tmp', { recursive: true });
     expect(fs.mkdirSync).toHaveBeenCalledWith('/home/tester/.codex', { recursive: true });
+  });
+
+  it('preserves an explicitly configured OpenAI base URL', async () => {
+    process.env = {
+      OPENAI_API_KEY: 'sk-test-key',
+      OPENAI_BASE_URL: 'https://custom.example/v1',
+      PATH: '/usr/bin',
+    } as NodeJS.ProcessEnv;
+    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
+    (fs.readFileSync as jest.Mock).mockReturnValue('{"action":"plan","content":"# Plan"}');
+
+    const runner = new CodexRunner();
+    await runner.generateImplementationPlan('Feature', 'Body', false, 'fast');
+
+    expect(spawnSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          OPENAI_BASE_URL: 'https://custom.example/v1',
+        }),
+      })
+    );
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_BASE_URL: https://custom.example/v1');
   });
 
   it('trims the OpenAI API key before passing it to Codex', async () => {

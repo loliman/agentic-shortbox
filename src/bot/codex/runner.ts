@@ -4,6 +4,8 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import * as core from '@actions/core';
 
+const DEFAULT_OPENAI_BASE_URL = 'https://adesso-ai-hub.3asabc.de/v1';
+
 export interface EpicSplitTask {
   title: string;
   specMarkdown: string;
@@ -235,6 +237,7 @@ export class CodexRunner {
     core.info(
       `[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: ${codexEnv.OPENAI_API_KEY?.startsWith('sk-') ? 'yes' : 'no'}`
     );
+    core.info(`[CodexRunner] OPENAI_BASE_URL: ${codexEnv.OPENAI_BASE_URL ?? '(not set)'}`);
     core.info('[CodexRunner] Prompt begin');
     core.info(prompt);
     core.info('[CodexRunner] Prompt end');
@@ -602,6 +605,7 @@ export class CodexRunner {
     const tempDir = process.env.TMPDIR || process.env.TMP || process.env.TEMP || os.tmpdir();
     const codexHome = process.env.CODEX_HOME || path.join(homeDir, '.codex');
     const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
+    const openAiBaseUrl = process.env.OPENAI_BASE_URL?.trim() || DEFAULT_OPENAI_BASE_URL;
 
     fs.mkdirSync(tempDir, { recursive: true });
     fs.mkdirSync(codexHome, { recursive: true });
@@ -613,7 +617,7 @@ export class CodexRunner {
       TMP: process.env.TMP || tempDir,
       TEMP: process.env.TEMP || tempDir,
       OPENAI_API_KEY: openAiApiKey,
-      OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+      OPENAI_BASE_URL: openAiBaseUrl,
       OPENAI_ORG_ID: process.env.OPENAI_ORG_ID,
       OPENAI_PROJECT: process.env.OPENAI_PROJECT,
       CODEX_HOME: codexHome,
