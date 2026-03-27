@@ -51745,10 +51745,6 @@ class BotController {
         // Parse generic action commands
         if (!command)
             return core.info('[Bot] No AI command detected in comment.');
-        if (payload.isPR) {
-            core.info('[Bot] Ignoring non-review PR discussion command.');
-            return;
-        }
         // State Checks (Guard)
         const currentState = (0, state_machine_1.extractCurrentState)(payload.labels);
         try {
@@ -51971,8 +51967,8 @@ class BotController {
             `This Pull Request was created for Issue #${issueNumber}.`,
             [
                 '**Review flow here:**',
-                '1. Leave inline review comments or general PR feedback.',
-                '2. Comment `ready for rework` inside the relevant review conversation when the feedback is complete.',
+                '1. Leave inline review comments or submit a full review on the PR.',
+                '2. Comment `ready for rework` on the PR when the feedback set is complete.',
                 '3. I will collect the review feedback, changed files, and diff, then apply only that rework.',
             ].join('\n'),
             ['**Example:**', '`ready for rework`'].join('\n'),
@@ -52689,27 +52685,6 @@ async function main() {
                 body,
                 labels,
                 isPR
-            });
-            return;
-        }
-        // 3. Rework Commands on PR Review Comments
-        if (eventName === 'pull_request_review_comment' && github.context.payload.action === 'created') {
-            const pullRequest = github.context.payload.pull_request;
-            const comment = github.context.payload.comment;
-            if (!pullRequest || !comment)
-                return;
-            if (comment.user?.type === 'Bot') {
-                core.info('[Action] Ignoring bot-authored review comment event.');
-                return;
-            }
-            const labels = pullRequest.labels ? pullRequest.labels.map((l) => l.name) : [];
-            core.info(`[Action] Parsing review comment from @${comment.user.login} on PR #${pullRequest.number}`);
-            await controller.handleCommand({
-                number: pullRequest.number,
-                author: comment.user.login,
-                body: comment.body,
-                labels,
-                isPR: true
             });
             return;
         }

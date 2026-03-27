@@ -8,4 +8,4 @@ This document explicitly defines the high-level process for moving a feature fro
 2. **Planning**: AI analyzes the issue and creates a plan after a `ready for planning` comment.
 3. **Approval**: Human reviews and approves plan iteratively.
 4. **Implementation**: AI implements according to plan after `ready for implementation`. It pushes code to a Pull Request.
-5. **Review**: Human reviews the PR, leaves feedback in the PR review conversation, and comments `ready for rework` in that review thread once the review feedback is complete.
+5. **Review**: Human reviews the PR, submits the review feedback, and comments `ready for rework` on the PR once the review feedback is complete.
