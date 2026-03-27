@@ -77,8 +77,8 @@ We utilize GitHub Issues as our UI console.
 Do not fake statuses. Always explicitly transition states via API (`state:planning` -> `state:planned`).
 
 For Pull Requests, the human workflow is:
-1. Leave review feedback directly on the PR.
-2. Comment `ready for rework` once the feedback set is complete.
+1. Leave review feedback in the PR review conversation.
+2. Comment `ready for rework` in that review thread once the feedback set is complete.
 3. The bot collects that PR feedback and applies only the requested rework.
 
 ---

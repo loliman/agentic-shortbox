@@ -79,7 +79,7 @@ Apply labels to each issue before giving commands:
 
 That's it. Open an issue and the bot greets you.
 
-For Pull Requests, leave your inline review feedback or discussion comments first, then comment `ready for rework` once the feedback is complete.
+For Pull Requests, leave your review feedback in the PR review conversation and comment `ready for rework` in that review thread once the feedback is complete.
 
 ---
 

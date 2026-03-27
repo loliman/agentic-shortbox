@@ -5,12 +5,14 @@ on:
     types: [opened]
   issue_comment:
     types: [created]
+  pull_request_review_comment:
+    types: [created]
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    # Ignore Bot Activities
-    if: github.event.sender.type != 'Bot'
+    # Ignore bot-authored comment events, but keep issue-open flows active.
+    if: github.event_name == 'issues' || github.event.sender.type != 'Bot'
 
     permissions:
       contents: write
