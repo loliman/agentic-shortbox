@@ -14,9 +14,9 @@ Protects the repository from wild AI modifications by enforcing human chokepoint
 Implements Section 7 (Workflow Phases) and Section 8 (Workflow State Model) of `AI_FIRST_AGENT_SPEC.md`.
 
 ## User Scenarios
-1. **Given** state `idle`, **When** user triggers `ready to implement`, **Then** the system replies "Cannot implement without an approved plan."
+1. **Given** state `idle`, **When** user triggers `ready for implementation`, **Then** the system replies that implementation cannot begin without an approved plan.
 2. **Given** state `planning`, **When** the AI finishes creating the plan, **Then** state transitions to `planned`.
-3. **Given** state `planned`, **When** user triggers `ready to implement`, **Then** state transitions to `implementing` and execution starts.
+3. **Given** state `planned`, **When** user triggers `ready for implementation`, **Then** state transitions to `implementing` and execution starts.
 
 ## Affected Areas
 - `scripts/ai/state-machine.js` (NEW)

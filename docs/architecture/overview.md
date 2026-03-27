@@ -1,23 +1,34 @@
 # System Architecture Overview
 
-This document describes the high-level system architecture, external dependencies, and execution model for the AI-First workflow project. We apply a decentralized, provider-agnostic separation of concerns.
+This document describes the high-level system architecture, external dependencies, and execution model for the GitHub-native AI bot. The current architecture is intentionally local to the GitHub Actions runner: validation happens at the action edge, while planning and implementation run inside the checked-out repository workspace.
 
-## 1. The Orchestrator Guard (Stateless Edge)
-The Orchestrator acts as the "Gatekeeper". It lives natively inside the source code repository's CI flow (e.g., GitHub Actions, GitLab CI).
-- **Responsibility**: Listens to issue/merge-request comments. Parses the command intent (`ready to plan`, `ready to implement`, `needs rework`, etc.) and the configuration labels (`model:strong`, `agent:codex`).
-- **Validation**: Enforces strict State Machine rules. If a command is illegal (e.g., trying to `implement` before a `plan` exists), it aborts and notifies the user via comment.
-- **Handoff**: If valid, the Orchestrator does NOT perform work. It wraps the command and repository context into a standardized JSON payload and fires it securely to an external `AGENT_WEBHOOK_URL`.
+## 1. GitHub Action Entrypoint
+The GitHub Action is the stateless edge of the system.
+- **Responsibility**: Listen to `issues.opened` and `issue_comment.created`, normalize the GitHub payload, and instantiate the bot controller with Octokit and repository context.
+- **Validation boundary**: It should not perform business decisions itself beyond basic event gating.
+- **Execution model**: It runs inside the repository's checked-out GitHub Actions workspace and hands control directly to application code in `src/bot/`.
 
-## 2. The Universal Webhook Payload
-The communication between the repository and the execution worker is fully decoupled and Version Control System (VCS) agnostic.
-The Orchestrator dispatches a payload containing:
-- `provider`: Explicitly defines the origin (e.g., `'github'`, `'gitlab'`).
-- `repository`: Owner and name of the repo needing attention.
-- `triggerContext`: Who trigged the command, and what the command was.
-- `configuration`: The exact models and agent-skills requested.
+## 2. Core Workflow Guard
+Pure workflow validation lives in `src/core/`.
+- **Parser**: Recognizes explicit commands such as `ready for specification`, `ready for planning`, `ready for implementation`, and PR feedback via `needs rework:` or `ai: fix`.
+- **Configuration extraction**: Reads `agent:*` and `model:*` labels as configuration only.
+- **State machine**: Validates legal state transitions before expensive work begins.
 
-## 3. The AI Worker Engine (Stateful Worker)
-The Worker is a completely isolated, dockerized Node application configured with `.env` files.
-- **Responsibility**: It receives Webhooks seamlessly across multiple different repositories.
-- **Execution**: Based on the `provider` string, it utilizes the correct API SDK to manipulate the remote repository. It clones the remote, runs the specified LLM pipeline (Planning, Epic Definition, or Code Implementation), commits new branches, pushes them, creates Pull Requests, and assigns reviewers.
-- **Status Updates**: The Worker Engine actively updates the Issue states natively (`state:planning`, `state:implementing`) as its asynchronous work progresses.
+## 3. Bot Controller
+The stateful bot logic lives in `src/bot/`.
+- **Responsibility**: Coordinate welcome messages, planning, specification generation, implementation, and PR rework handling.
+- **Collaborators**:
+  - `llm/client.ts` for prompt execution
+  - `git/manager.ts` for local git and filesystem operations
+  - `provider/github.ts` and Octokit integrations for comments, labels, issues, and PRs
+- **Execution model**: The controller operates directly on the runner's local workspace instead of dispatching to an external worker or webhook service.
+
+## 4. Git and Repository Operations
+Git operations are performed locally through `src/bot/git/manager.ts`.
+- Branch creation, file application, commits, and pushes must go through the manager.
+- The controller should avoid ad hoc shell-level git logic outside this boundary.
+
+## 5. Configuration Sources
+- GitHub labels provide per-issue configuration.
+- GitHub Actions secrets provide runtime credentials such as `GITHUB_TOKEN`, `OPENAI_API_KEY`, and `GEMINI_API_KEY`.
+- Governance context comes from repository files such as `AGENTS.md`, `README.md`, `docs/`, `specs/`, and `plans/`.

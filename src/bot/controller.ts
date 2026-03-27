@@ -118,15 +118,17 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
     const issueData = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: payload.number });
     
     const agent = new LLMClient();
-    const result = await agent.generateEpicSplit(issueData.data.title, issueData.data.body);
+    const tasks = await agent.generateEpicSplit(issueData.data.title, issueData.data.body);
     
     // Create sub issues 
     const links = [];
-    for (const spec of result.tasks) {
+    for (const spec of tasks) {
        const created = await this.octokit.rest.issues.create({
          ...this.ctx,
          title: spec.title,
-         body: `This is an auto-generated sub-issue from #${payload.number}.\n\n${spec.description}\n\nFile changes intent:\n${spec.affectedFiles.join('\n')}`
+         body: spec.specMarkdown
+           ? `This is an auto-generated sub-issue from #${payload.number}.\n\n${spec.specMarkdown}`
+           : `This is an auto-generated sub-issue from #${payload.number}.\n\n${spec.description || ''}\n\nFile changes intent:\n${(spec.affectedFiles || []).join('\n')}`
        });
        links.push(`#${created.data.number} - ${spec.title}`);
     }

@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
 
       # Self-referencing: this repo IS the action.
-      # External repos replace ./ with loliman/agentic-shortbox@v1.2
+      # External repos replace ./ with loliman/agentic-shortbox@v1.3
       - name: Run AI Bot
         uses: ./
         env:

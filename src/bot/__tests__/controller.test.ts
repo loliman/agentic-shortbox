@@ -125,6 +125,36 @@ describe('BotController', () => {
     });
   });
 
+  describe('handleSpecification', () => {
+    it('creates child issues from an epic split array response', async () => {
+      (LLMClient as jest.Mock).mockImplementation(() => ({
+        generateEpicSplit: jest.fn().mockResolvedValue([
+          { title: 'Spec 1', description: 'Detail', affectedFiles: ['src/core/parser.ts'] },
+          { title: 'Spec 2', specMarkdown: '# Feature: Spec 2' }
+        ])
+      }));
+
+      mockOctokit.rest.issues.create
+        .mockResolvedValueOnce({ data: { number: 41 } })
+        .mockResolvedValueOnce({ data: { number: 42 } });
+
+      const payload = { number: 12, author: 'alice', body: 'ready for specification', labels: ['state:idle'], isPR: false };
+      await controller.handleCommand(payload);
+
+      expect(mockOctokit.rest.issues.create).toHaveBeenNthCalledWith(1, expect.objectContaining({
+        title: 'Spec 1',
+        body: expect.stringContaining('Detail')
+      }));
+      expect(mockOctokit.rest.issues.create).toHaveBeenNthCalledWith(2, expect.objectContaining({
+        title: 'Spec 2',
+        body: expect.stringContaining('# Feature: Spec 2')
+      }));
+      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+        body: expect.stringContaining('Epic split completed')
+      }));
+    });
+  });
+
   describe('handleImplementation', () => {
     it('executes the full git cycle and spawns PR', async () => {
        (LLMClient as jest.Mock).mockImplementation(() => ({

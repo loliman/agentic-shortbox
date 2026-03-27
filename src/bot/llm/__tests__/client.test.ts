@@ -81,7 +81,7 @@ describe('LLMClient', () => {
       process.env.OPENAI_API_KEY = 'mock-openai';
       
       const mockCreate = jest.fn().mockResolvedValue({
-        choices: [{ message: { content: '{"tasks": []}' } }]
+        choices: [{ message: { content: '[]' } }]
       });
       (OpenAI as unknown as jest.Mock).mockImplementation(() => ({
         chat: { completions: { create: mockCreate } }
@@ -94,12 +94,28 @@ describe('LLMClient', () => {
       const client = new LLMClient();
       const res = await client.generateEpicSplit('Epic', 'Body');
 
-      expect(res).toEqual({ tasks: [] });
+      expect(res).toEqual([]);
       const sentPrompt = mockCreate.mock.calls[0][0].messages[0].content;
       
       expect(sentPrompt).toContain('Mocked System Rules');
       expect(sentPrompt).toContain('=== SYSTEM ARCHITECTURE & GOVERNANCE ===');
       expect(sentPrompt).toContain('=== TASK: EPIC SPLITTING ===');
+    });
+
+    it('accepts the legacy object shape for epic splitting', async () => {
+      process.env.OPENAI_API_KEY = 'mock-openai';
+
+      const mockCreate = jest.fn().mockResolvedValue({
+        choices: [{ message: { content: '{"tasks":[{"title":"Spec A","description":"Desc"}]}' } }]
+      });
+      (OpenAI as unknown as jest.Mock).mockImplementation(() => ({
+        chat: { completions: { create: mockCreate } }
+      }));
+
+      const client = new LLMClient();
+      const res = await client.generateEpicSplit('Epic', 'Body');
+
+      expect(res).toEqual([{ title: 'Spec A', description: 'Desc' }]);
     });
 
     it('throws explicit errors on malformed JSON responses', async () => {

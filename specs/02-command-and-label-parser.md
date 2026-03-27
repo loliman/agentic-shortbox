@@ -7,14 +7,14 @@ Build a strict parser that intercepts the orchestrator's payload to determine *w
 Users need a standardized, deterministic way to interact with the system. Without this, agents might try to guess intent via natural language, leading to chaos. Explicit commands guarantee predictable results.
 
 ## Scope
-- **In Scope:** Parsing labels `agent:<name>`, `model:<tier>`. Establishing fallback defaults. Extracting strict text commands like `ready to plan` and `ready to implement`.
+- **In Scope:** Parsing labels `agent:<name>`, `model:<tier>`. Establishing fallback defaults. Extracting strict text commands like `ready for specification`, `ready for planning`, and `ready for implementation`.
 - **Out of Scope (Non-Goals):** Executing the underlying agent scripts. Managing historical workflow state.
 
 ## Domain Context
 Implements Section 5 (Execution Configuration) and Section 6 (Commands) of `AI_FIRST_AGENT_SPEC.md`.
 
 ## User Scenarios
-1. **Given** a comment `ready to plan`, **When** labels `agent:codex` and `model:fast` are present, **Then** the parser returns: `{ command: "plan", agent: "codex", tier: "fast" }`.
+1. **Given** a comment `ready for planning`, **When** labels `agent:codex` and `model:fast` are present, **Then** the parser returns a plan command with the requested configuration.
 2. **Given** conflicting labels `agent:codex`, `agent:gemini`, **When** a command is parsed, **Then** the system gracefully fails and posts an error comment.
 3. **Given** free-text "Please write the code for me", **Then** the parser ignores it.
 
@@ -42,7 +42,7 @@ Implements Section 5 (Execution Configuration) and Section 6 (Commands) of `AI_F
 - Unit tests for command extraction ignoring surrounding whitespace.
 
 ## Definition of Done
-- [ ] Parses `ready to plan` and `ready to implement`.
+- [ ] Parses `ready for specification`, `ready for planning`, and `ready for implementation`.
 - [ ] Parses `agent:*` and `model:*` via pure functional logic.
 - [ ] Gracefully detects multiple labels of the same category and throws.
 - [ ] Returns default settings if missing.

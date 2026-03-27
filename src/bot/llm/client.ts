@@ -3,6 +3,13 @@ import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
 import path from 'path';
 
+export interface EpicSplitTask {
+  title: string;
+  description?: string;
+  specMarkdown?: string;
+  affectedFiles?: string[];
+}
+
 export class MissingConfigurationError extends Error {
   constructor(message: string) {
     super(message);
@@ -59,10 +66,20 @@ export class LLMClient {
     return context;
   }
 
-  async generateEpicSplit(title: string, body: string): Promise<{ tasks: any[] }> {
+  async generateEpicSplit(title: string, body: string): Promise<EpicSplitTask[]> {
     const sys = this.gatherSystemContext();
     const prompt = `\n\n${sys}\n\n=== TASK: EPIC SPLITTING ===\nYou are a Product Owner breaking down an epic into sub-issues.\nEpic Title: ${title}\nEpic Body: ${body}\n\nReturn EXACTLY a JSON array mapping to: [{ title: string, description: string, affectedFiles: string[] }] (no markdown wrapping).`;
-    return this.askJSON(prompt);
+    const result = await this.askJSON<EpicSplitTask[] | { tasks: EpicSplitTask[] }>(prompt);
+
+    if (Array.isArray(result)) {
+      return result;
+    }
+
+    if (result && Array.isArray(result.tasks)) {
+      return result.tasks;
+    }
+
+    throw new Error('Epic split response must be a JSON array or an object with a tasks array.');
   }
 
   async generateImplementationPlan(title: string, body: string, force: boolean): Promise<{ action: 'plan' | 'question', content: string }> {

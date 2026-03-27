@@ -54,10 +54,11 @@ Contains:
 - `controller.ts`
 - `llm/client.ts`
 - `git/manager.ts`
+- `provider/`
 
 **Rules:**
 - Must exclusively use `manager.ts` for file/system Git operations.
-- Must read configuration from Webhook payload (never hardcode `github`).
+- Must read configuration from the GitHub event payload and labels (never hardcode repository-specific values).
 - Cannot access `.github/` workflows.
 
 ## `specs/` and `plans/`
@@ -71,7 +72,7 @@ Contains:
 
 We utilize GitHub Issues as our UI console.
 - **Labels** (e.g., `agent:codex`, `model:fast`) are **Configuration**. They never initiate an action.
-- **Comments** (e.g., `ready to plan`, `ready to implement`) are **Commands**. They always initiate an action.
+- **Comments** (e.g., `ready for planning`, `ready for implementation`) are **Commands**. They always initiate an action.
 
 Do not fake statuses. Always explicitly transition states via API (`state:planning` -> `state:planned`).
 
@@ -79,7 +80,7 @@ Do not fake statuses. Always explicitly transition states via API (`state:planni
 
 # Epic Splitting Rules
 
-If you receive a `ready to define` command on a parent issue:
+If you receive a `ready for specification` command on a parent issue:
 1. Split the epic into isolated logical tasks.
 2. For each task, generate a specification in `specs/` following exactly `specs/templates/feature-spec.md`.
 3. Create a new GitHub child-issue for each spec.
@@ -98,9 +99,9 @@ If you receive a `ready to define` command on a parent issue:
 
 1. Identify the architectural layer (Orchestrator vs Worker) before changing anything.
 2. Read `docs/architecture/` before proposing new features.
-3. Ensure the Worker stays Provider Agnostic (e.g. GitHub vs GitLab vs Bitbucket).
+3. Keep GitHub-specific integration concerns out of `src/core/` and isolated to the action/provider layers.
 4. Add **Jest** parity tests for pure functions in `src/core/`.
-5. Summarize what was changed and maintain the sandbox E2E `testcontainers` tests when adding worker constraints.
+5. Summarize what was changed and preserve the existing local test strategy when extending controller or git constraints.
 
 ---
 
@@ -122,7 +123,7 @@ A task is complete only if:
 - [ ] No LLM API calls are introduced into the Orchestrator layer.
 - [ ] New parsing commands are covered by `src/core/__tests__/`.
 - [ ] Specifications are correctly logged in `specs/` or `plans/`.
-- [ ] The E2E `testcontainers` mock runs structurally unmodified.
+- [ ] Existing automated tests remain structurally valid for the affected layer.
 - [ ] ESLint passes.
 - [ ] Jest tests pass.
 

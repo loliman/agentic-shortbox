@@ -4,12 +4,12 @@
 We are discarding the completely decoupled Docker/Express "Worker Engine" architecture and pivoting strictly to a **GitHub Actions-Native AI Bot**.
 All LLM prompts, state machine transitions, label modifications, and Git operations will run directly as a unified Node.js executable within the GitHub Actions runner environment.
 
-## User Review Required
-> [!IMPORTANT]
-> **Loss of Provider Agnosticism:** This pivot means the codebase will strictly bind to `@actions/github` and GitHub Actions environments. GitLab/Bitbucket support is officially dropped. Do you confirm this trade-off?
+Status note: this pivot now represents the accepted baseline architecture and should be treated as implemented design direction, not as a pending alternative.
 
-> [!CAUTION]
-> GitHub Actions have time limits (usually 6 hours) and require passing the `.env` API keys natively into the repository secrets. The Docker/Express Sandbox will be sunset.
+## User Review Required
+The architectural trade-off has already been accepted in the repository direction:
+- GitHub Actions is the supported runtime.
+- External worker hosting is no longer part of the intended architecture.
 
 ## Proposed Changes
 
@@ -54,9 +54,12 @@ Instead of a router, we create a native Bot Controller that handles:
 #### [MODIFY] `src/worker/llm/client.ts`
 - Upgrade prompts to strictly inject system context: "You must adhere to `/docs`, `/specs`, `README.md`, and `AGENTS.md`". We will read these files natively from the repo tree using `fs.readFileSync` since the GitHub Actions runner checks out the full codebase before executing the script!
 
+#### [MODIFY] Repository Documentation
+- Update `AGENTS.md`, `docs/architecture/*`, `docs/workflows/*`, and affected `specs/`/`plans/` files so terminology matches the GitHub-native runtime.
+
 ## Open Questions
-- **Action Triggers**: Do we want the "Welcome Message" to be posted *only* if the issue has a specific label (like `ai-request`), or on *every single* issue opened in the repository?
-- **AI "Bedenken" (Hesitation)**: When the bot asks clarification questions instead of returning a plan, should it change the state label to `state:clarification_needed`?
+- **Welcome Trigger Policy**: Keep posting on every new issue unless a narrower repository rule is introduced.
+- **Clarification State**: `state:clarification_needed` remains the expected label when planning cannot proceed cleanly.
 
 ## Verification Plan
 ### Automated Tests

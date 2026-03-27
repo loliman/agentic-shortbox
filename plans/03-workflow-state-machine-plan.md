@@ -21,10 +21,10 @@ To ensure agents follow the rigorous "Plan before Implement" architecture laid o
 
 ## Workflow / State Changes
 - Allowed Transitions:
-  - `idle` + `ready to plan` ➔ `planning`
+  - `idle` + `ready for planning` ➔ `planning`
   - `planning` + (Agent completes plan) ➔ `planned`
-  - `planned` + `ready to implement` ➔ `implementing`
-  - Any illegal transition (e.g., `idle` + `ready to implement`) ➔ State unchanged, throws `IllegalTransitionError`.
+  - `planned` + `ready for implementation` ➔ `implementing`
+  - Any illegal transition (e.g., `idle` + `ready for implementation`) ➔ State unchanged, throws `IllegalTransitionError`.
 
 ## Tests to Add or Update
 - Exhaustive Jest tests (`state-machine.test.ts`) covering every node in the transition matrix.

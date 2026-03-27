@@ -1,7 +1,7 @@
 # Plan: Command and Label Configuration Parser
 
 ## Summary
-The system requires a strict, predictable parser to determine intent from unstructured GitHub payload strings without relying on ambiguous Natural Language Processing. This module will expose two pure functions: one to extract exact textual commands (`ready to plan`, `ready to implement`) from the issue comment body, and another to parse agent configuration from an array of labels (`agent:*`, `model:*`). The parser will strictly fail if conflicting configurations (e.g., dual `agent:` labels) are detected and fall back to sensible defaults when no configuration is specified.
+The system requires a strict, predictable parser to determine intent from GitHub comment text without relying on ambiguous Natural Language Processing. This module exposes pure functions to extract exact textual commands (`ready for specification`, `ready for planning`, `ready for implementation`) and to parse agent configuration from an array of labels (`agent:*`, `model:*`). The parser strictly fails if conflicting configurations are detected and falls back to sensible defaults when no configuration is specified.
 
 ## Affected Files
 - `.github/workflows/ai-orchestrator.yml`: To provide label context, we must pass the active issue labels array down to the entrypoint (e.g., `ISSUE_LABELS: ${{ toJson(github.event.issue.labels.*.name) }}`).
@@ -31,7 +31,7 @@ The system requires a strict, predictable parser to determine intent from unstru
 
 ## Rollout Steps
 1. **Extend Orchestrator Payload**: Update the GitHub Action `.yml` and `src/github/action.ts` to extract and forward issue labels stringified as JSON. Update `action.test.ts` accordingly.
-2. **Implement Parser Logic**: Create `src/core/parser.ts`. Define logic to regex-match `ready to plan` and `ready to implement` strings aggressively against comment text. Provide a separate label array iteration logic mapping config keys and catching duplicates.
+2. **Implement Parser Logic**: Create `src/core/parser.ts`. Define logic to recognize `ready for specification`, `ready for planning`, and `ready for implementation` against comment text. Provide a separate label array iteration logic mapping config keys and catching duplicates.
 3. **Implement Fallback/Error Checks**: Include checks throwing standardized `Error` objects on configuration clashes.
 4. **Implement Unit Tests**: Add test matrices covering all stated user scenarios.
 5. **Hook Parser to Orchestrator (Optional within this scope)**: Import `parser` into `src/github/action.ts` and validate the payload payload.
@@ -43,7 +43,7 @@ The system requires a strict, predictable parser to determine intent from unstru
   - *Mitigation*: Defensive `try/catch` JSON parsing over the `ISSUE_LABELS` `process.env` mapping to fallback on an empty array.
 
 ## Definition of Done
-- [ ] Parses `ready to plan` and `ready to implement`.
+- [ ] Parses `ready for specification`, `ready for planning`, and `ready for implementation`.
 - [ ] Parses `agent:*` and `model:*` via pure functional logic.
 - [ ] Gracefully detects multiple labels of the same category and throws.
 - [ ] Returns default settings if missing.

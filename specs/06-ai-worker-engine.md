@@ -1,51 +1,50 @@
-# Feature: AI Worker Engine & Workflow Operations
+# Feature: Native Bot Execution Engine & Workflow Operations
 
 ## Goal
-Build the robust implementation of the external AI Worker Engine API. It securely receives commands from the GitHub Orchestrator Guard, assumes full control of its own Workflow State (via its own GitHub API instance), prepares model prompts based on the labels, and performs hard Git/Repository operations to deliver code and plans.
+Build the native bot execution engine that handles specification, planning, implementation, and PR rework directly inside the GitHub Actions runner workspace.
 
 ## User Value
-Turns the "planning" and "implementing" commands into real actionable results. The Bot operates just like a human developer: it clones the code, reads the issue, pushes commits back, and requests reviews.
+Turns issue comments into actionable planning and implementation results without requiring a separate worker service.
 
 ## Scope
 - **In Scope:** 
-  - An API Webhook receiver endpoint.
   - Integration with the chosen LLM backend (based on the `model:` tier passed in the config).
-  - GitHub Octokit integrations to manually set `state:planning`, `state:planned`, `state:implementing`, and `state:in-review` dynamically as the engine progresses.
-  - Complete Git operation flows: creating branches, pulling code, generating patches/commits, and opening Pull Requests.
+  - GitHub Octokit integrations to set and update workflow comments and `state:` labels as the native bot progresses.
+  - Complete Git operation flows inside the runner workspace: creating branches, applying generated file changes, committing, pushing, and opening Pull Requests.
   - Implementing the "Fix Chain" (updating an existing PR with new commits).
-  - **Dockerization (Zero-Config Deployment):** A fully bundled `Dockerfile` / `docker-compose.yml` that only requires a `.env` file containing `GITHUB_TOKEN` and API keys (`OPENAI_API_KEY`, `GEMINI_API_KEY`).
 - **Out of Scope (Non-Goals):** 
-  - Polling GitHub for comments (we rely on the Orchestrator Webhook PUSH).
+  - External webhook receivers, Docker worker hosting, or provider-agnostic remote execution.
 
 ## Domain Context
-This forms the core "Execution Engine" of the entire AI-first repository architecture, honoring the boundaries established in `AI_FIRST_AGENT_SPEC.md`.
+This forms the stateful execution core of the GitHub-native bot architecture.
 
 ## User Scenarios
-1. **Given** an API request for an `implement` command on `external-org/cool-project`, **When** the workflow starts, **Then** the Agent sets the GitHub Issue label on that specific remote project to `state:implementing`.
-2. **Given** model generation finishes, **When** code is produced, **Then** the Agent uses the provided repo context to clone `external-org/cool-project`, creates a new branch, pushes commits, creates a Pull Request back on that repo, assigns the human trigger-author for review, and updates the state to `state:in-review`.
-3. **Given** a `rework` command arrives for an existing PR, **Then** the Agent checks out the existing PR branch from the remote repo, applies the incremental fixes requested, pushes a new commit to the origin, and pings the author.
+1. **Given** a `ready for planning` command on an issue, **When** planning starts, **Then** the bot comments progress, generates a plan, and updates the state label to either `state:planned` or `state:clarification_needed`.
+2. **Given** a `ready for implementation` command on a planned issue, **When** code generation completes, **Then** the bot creates a branch, commits and pushes generated changes, opens a PR, and moves the issue to `state:in-review`.
+3. **Given** an `ai: fix ...` comment on a PR, **When** the bot applies the requested follow-up, **Then** it commits to the existing PR head branch and comments success.
 
 ## Affected Areas
-- `src/agents/` (or a completely isolated server application infrastructure block, depending on hosting strategy – for our repo context, we will build a placeholder or standalone worker node app inside `src/worker/`).
-- GitHub API interactions (Octokit).
-- Local Git file-system executions (or isomorphic Git libraries like `isomorphic-git`).
+- `src/bot/controller.ts`
+- `src/bot/llm/client.ts`
+- `src/bot/git/manager.ts`
+- GitHub API interactions via Octokit
 
 ## UX / Behavior
-- Transparent Status: The Agent sets `planning` explicitly while the LLM generates tokens. 
+- Transparent Status: The bot comments progress and updates `state:` labels as work advances.
 - Iterative Feedback: Commits are small and incremental.
 
 ## Business Rules
-- The worker MUST strictly respect the model tier requested (`model:strong` vs `model:fast`).
-- The worker MUST set the correct `state:` label immediately before doing heavy workloads to prevent duplicate manual commands.
-- The worker MUST assign the human who wrote the command as a Reviewer to the newly created Pull Request.
-- **Deployability**: The server must be completely stateless between runs and configured 100% via environment variables (`.env`). "Start image, it runs." There must be no manual setup steps inside the container.
+- The bot MUST strictly respect the model tier requested (`model:strong` vs `model:fast`).
+- The bot MUST set the correct `state:` label as workflow stages complete.
+- The bot MUST use `GitManager` for repository mutations.
+- Runtime credentials must come from GitHub Actions environment variables or action inputs.
 
 ## Test Plan
-- Unit tests verifying Webhook authentication handlers.
-- End-to-end tests mapping the prompt generation layer securely.
+- Controller tests covering planning, implementation, and PR fix flows with mocked Octokit and LLM clients.
+- Unit tests preserving parser and state-machine behavior in `src/core/`.
 
 ## Definition of Done
-- [ ] API Endpoint defined and authenticated.
-- [ ] Agent actively manages GitHub Issue state before and after workflow runs.
-- [ ] Agent can execute git operations and open a targeted PR.
-- [ ] End-to-end logic handles Planning, Implementation, and Rework flows correctly.
+- [ ] Bot manages GitHub issue comments and state labels for planning and implementation flows.
+- [ ] Bot can execute git operations and open a targeted PR from the runner workspace.
+- [ ] Rework flow can add commits to an existing PR branch.
+- [ ] No external worker service is required for the supported workflows.

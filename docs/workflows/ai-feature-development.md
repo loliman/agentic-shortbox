@@ -3,9 +3,9 @@
 This document explicitly defines the high-level process for moving a feature from Spec to Implementation using AI agents.
 
 ## Phases
-0. **Definition (Epic Splitting)**: User writes monolithic feature request. AI explicitly breaks it into 3-5 child specs (via `ready to define`).
+0. **Definition (Epic Splitting)**: User writes a large feature request. AI can break it into child issues via `ready for specification`.
 1. **Specification**: Human completely writes or refines `specs/...` manually or via Phase 0.
-2. **Planning**: AI analyzes spec, creates `plans/...` after `ready to plan` command.
+2. **Planning**: AI analyzes the issue and creates a plan after a `ready for planning` comment.
 3. **Approval**: Human reviews and approves plan iteratively.
-4. **Implementation**: AI implements according to plan after `ready to implement` command. It pushes code to a Pull Request.
-5. **Review**: Human reviews the PR and demands fixes via `needs rework: <text>` on the PR.
+4. **Implementation**: AI implements according to plan after `ready for implementation`. It pushes code to a Pull Request.
+5. **Review**: Human reviews the PR and requests targeted fixes via `ai: fix <text>` on the PR.
