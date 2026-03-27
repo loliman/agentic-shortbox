@@ -265,6 +265,7 @@ export class CodexRunner {
       const turn = await this.executeStructuredTurn(prompt, schema, modelConf, codexEnv);
       const raw = turn.finalResponse.trim();
       core.info(`[CodexRunner] Completed turn items: ${turn.items.length}`);
+      this.logFinalResponse(raw);
       try {
         return this.parseStructuredOutput<T>(raw, schema);
       } catch (error) {
@@ -366,6 +367,12 @@ export class CodexRunner {
     core.info('[CodexRunner] Structured output candidate begin');
     core.info(candidate);
     core.info('[CodexRunner] Structured output candidate end');
+  }
+
+  private logFinalResponse(raw: string): void {
+    core.info('[CodexRunner] Final response begin');
+    core.info(raw);
+    core.info('[CodexRunner] Final response end');
   }
 
   private logRawOutputFile(raw: string): void {

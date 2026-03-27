@@ -73,6 +73,9 @@ describe('CodexRunner', () => {
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Prompt begin');
     expect(core.info).toHaveBeenCalledWith(expect.stringContaining('Command: ready for planning'));
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Prompt end');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Final response begin');
+    expect(core.info).toHaveBeenCalledWith('{"action":"plan","content":"# Plan"}');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Final response end');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Structured output source: output-last-message');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_API_KEY length: 8');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: no');
