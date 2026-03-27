@@ -226,7 +226,6 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
-      applyMissingFileSystemChanges: jest.fn().mockResolvedValue(['specs/07-feature-title.md', 'plans/07-feature-title-plan.md']),
       hasWorkingTreeChanges: jest.fn().mockResolvedValue(true),
       commitAndPush: jest.fn().mockResolvedValue(true),
     };
@@ -300,10 +299,6 @@ describe('BotController', () => {
       'fast'
     );
     expect(mockGit.hasWorkingTreeChanges).toHaveBeenCalled();
-    expect(mockGit.applyMissingFileSystemChanges).toHaveBeenCalledWith([
-      { path: 'specs/07-feature-title.md', content: 'Feature Spec\n' },
-      { path: 'plans/07-feature-title-plan.md', content: '# Plan\n' },
-    ]);
     expect(mockGit.commitAndPush).toHaveBeenCalledWith('PR Rework: address review feedback', 'existing-branch');
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 99,
@@ -325,7 +320,6 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
-      applyMissingFileSystemChanges: jest.fn().mockResolvedValue(['specs/07-feature-title.md', 'plans/07-feature-title-plan.md']),
       hasWorkingTreeChanges: jest.fn().mockResolvedValue(true),
       commitAndPush: jest.fn().mockResolvedValue(true),
     };
@@ -350,10 +344,6 @@ describe('BotController', () => {
       'strong'
     );
     expect(mockGit.hasWorkingTreeChanges).toHaveBeenCalled();
-    expect(mockGit.applyMissingFileSystemChanges).toHaveBeenCalledWith([
-      { path: 'specs/07-feature-title.md', content: 'Feature Spec\n' },
-      { path: 'plans/07-feature-title-plan.md', content: '# Plan\n' },
-    ]);
     expect(mockGit.commitAndPush).toHaveBeenCalledWith('PR Refinement: apply requested polish', 'existing-branch');
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 99,
@@ -375,7 +365,6 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
-      applyMissingFileSystemChanges: jest.fn().mockResolvedValue([]),
       hasWorkingTreeChanges: jest.fn().mockResolvedValue(false),
       commitAndPush: jest.fn().mockResolvedValue(false),
     };
@@ -421,7 +410,6 @@ describe('BotController', () => {
       issue_number: 99,
       body: expect.stringContaining('✅ Addressed feedback pushed'),
     }));
-    expect(mockGit.applyMissingFileSystemChanges).not.toHaveBeenCalled();
     expect(mockGit.commitAndPush).not.toHaveBeenCalled();
   });
 

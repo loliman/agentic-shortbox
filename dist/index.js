@@ -33429,14 +33429,11 @@ class BotController {
         if (!hasChanges) {
             throw new Error(`Codex reported file changes (${result.changedFiles.join(', ') || 'none'}), but git status stayed clean. Aborting before commit.`);
         }
-        const persistedArtifacts = featureContext.issueNumber
-            ? await this.persistContextArtifacts(git, featureContext.issueNumber, featureContext.title, featureContext.spec, featureContext.plan)
-            : [];
         const pushed = await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
         if (!pushed) {
             throw new Error('Codex did not produce any committed file changes for this rework. Aborting instead of claiming success.');
         }
-        await this.postStatus(payload.number, this.buildEditSummaryComment('🛠️ **Rework applied**', result.summary, result.changedFiles, undefined, persistedArtifacts));
+        await this.postStatus(payload.number, this.buildEditSummaryComment('🛠️ **Rework applied**', result.summary, result.changedFiles));
         await this.postStatus(payload.number, `✅ Addressed feedback pushed to ${headBranch}.`);
         await this.postStatus(payload.number, this.buildPullRequestNextStepsComment('rework'));
     }
@@ -33460,14 +33457,11 @@ class BotController {
         if (!hasChanges) {
             throw new Error(`Codex reported file changes (${result.changedFiles.join(', ') || 'none'}), but git status stayed clean. Aborting before commit.`);
         }
-        const persistedArtifacts = featureContext.issueNumber
-            ? await this.persistContextArtifacts(git, featureContext.issueNumber, featureContext.title, featureContext.spec, featureContext.plan)
-            : [];
         const pushed = await git.commitAndPush('PR Refinement: apply requested polish', headBranch);
         if (!pushed) {
             throw new Error('Codex did not produce any committed file changes for this refinement. Aborting instead of claiming success.');
         }
-        await this.postStatus(payload.number, this.buildEditSummaryComment('✨ **Refinement applied**', result.summary, result.changedFiles, refinementInstruction, persistedArtifacts));
+        await this.postStatus(payload.number, this.buildEditSummaryComment('✨ **Refinement applied**', result.summary, result.changedFiles, refinementInstruction));
         await this.postStatus(payload.number, `✅ Refinement updates pushed to ${headBranch}.`);
         await this.postStatus(payload.number, this.buildPullRequestNextStepsComment('refinement'));
     }
