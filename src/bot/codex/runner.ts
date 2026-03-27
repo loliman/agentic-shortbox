@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import * as core from '@actions/core';
 
 export interface EpicSplitTask {
   title: string;
@@ -216,9 +217,13 @@ export class CodexRunner {
 
     const prompt = this.buildPrompt(task);
     const codexCommand = this.resolveCodexCommand();
+    const codexEnv = this.buildCodexEnv();
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-runner-'));
     const schemaPath = path.join(tempDir, 'schema.json');
     const outputPath = path.join(tempDir, 'output.json');
+
+    core.info(`[CodexRunner] Launching Codex CLI via ${codexCommand.executable}`);
+    core.info(`[CodexRunner] OPENAI_API_KEY present: ${codexEnv.OPENAI_API_KEY ? 'yes' : 'no'}`);
 
     fs.writeFileSync(schemaPath, JSON.stringify(schema, null, 2), 'utf8');
 
@@ -242,7 +247,7 @@ export class CodexRunner {
       ],
       {
         cwd: process.cwd(),
-        env: process.env,
+        env: codexEnv,
         input: prompt,
         encoding: 'utf8',
       }
@@ -329,6 +334,28 @@ export class CodexRunner {
 
     const tail = lines.slice(-20).join('\n').trim();
     return tail || 'Codex execution failed.';
+  }
+
+  private buildCodexEnv(): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      TMPDIR: process.env.TMPDIR,
+      TMP: process.env.TMP,
+      TEMP: process.env.TEMP,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+      OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+      OPENAI_ORG_ID: process.env.OPENAI_ORG_ID,
+      OPENAI_PROJECT: process.env.OPENAI_PROJECT,
+      CODEX_HOME: process.env.CODEX_HOME,
+      CI: process.env.CI,
+      GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
+      NO_COLOR: process.env.NO_COLOR ?? '1',
+    };
+
+    return Object.fromEntries(
+      Object.entries(env).filter(([, value]) => typeof value === 'string' && value.length > 0)
+    );
   }
 
   private resolveModel(modelConf: string): string {

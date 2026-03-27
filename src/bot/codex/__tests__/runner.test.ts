@@ -7,13 +7,16 @@ import { CodexRunner, MissingConfigurationError } from '../runner';
 jest.mock('fs');
 jest.mock('os');
 jest.mock('child_process');
+jest.mock('@actions/core', () => ({
+  info: jest.fn(),
+}));
 
 describe('CodexRunner', () => {
   const originalEnv = process.env;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env = { ...originalEnv, OPENAI_API_KEY: 'test-key' };
+    process.env = { ...originalEnv, OPENAI_API_KEY: 'test-key', PATH: '/usr/bin' };
     (os.tmpdir as jest.Mock).mockReturnValue('/tmp');
     (fs.mkdtempSync as jest.Mock).mockReturnValue('/tmp/codex-runner-123');
     (fs.writeFileSync as jest.Mock).mockImplementation(() => undefined);
@@ -45,6 +48,10 @@ describe('CodexRunner', () => {
       expect.arrayContaining(['exec', '-', '--output-schema', '/tmp/codex-runner-123/schema.json', '--output-last-message', '/tmp/codex-runner-123/output.json', '--model', 'codex-mini-latest']),
       expect.objectContaining({
         cwd: process.cwd(),
+        env: expect.objectContaining({
+          OPENAI_API_KEY: 'test-key',
+          PATH: '/usr/bin',
+        }),
         input: expect.stringContaining('You must read and obey `AGENTS.md`'),
       })
     );

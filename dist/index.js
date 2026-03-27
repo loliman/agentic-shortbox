@@ -32557,6 +32557,39 @@ function wrappy (fn, cb) {
 
 "use strict";
 
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -32566,6 +32599,7 @@ const fs_1 = __importDefault(__nccwpck_require__(9896));
 const os_1 = __importDefault(__nccwpck_require__(857));
 const path_1 = __importDefault(__nccwpck_require__(6928));
 const child_process_1 = __nccwpck_require__(5317);
+const core = __importStar(__nccwpck_require__(7484));
 class MissingConfigurationError extends Error {
     constructor(message) {
         super(message);
@@ -32724,9 +32758,12 @@ class CodexRunner {
         }
         const prompt = this.buildPrompt(task);
         const codexCommand = this.resolveCodexCommand();
+        const codexEnv = this.buildCodexEnv();
         const tempDir = fs_1.default.mkdtempSync(path_1.default.join(os_1.default.tmpdir(), 'codex-runner-'));
         const schemaPath = path_1.default.join(tempDir, 'schema.json');
         const outputPath = path_1.default.join(tempDir, 'output.json');
+        core.info(`[CodexRunner] Launching Codex CLI via ${codexCommand.executable}`);
+        core.info(`[CodexRunner] OPENAI_API_KEY present: ${codexEnv.OPENAI_API_KEY ? 'yes' : 'no'}`);
         fs_1.default.writeFileSync(schemaPath, JSON.stringify(schema, null, 2), 'utf8');
         const result = (0, child_process_1.spawnSync)(codexCommand.executable, [
             ...codexCommand.args,
@@ -32745,7 +32782,7 @@ class CodexRunner {
             this.resolveModel(modelConf),
         ], {
             cwd: process.cwd(),
-            env: process.env,
+            env: codexEnv,
             input: prompt,
             encoding: 'utf8',
         });
@@ -32819,6 +32856,24 @@ class CodexRunner {
             .filter((line) => line.trim().length > 0);
         const tail = lines.slice(-20).join('\n').trim();
         return tail || 'Codex execution failed.';
+    }
+    buildCodexEnv() {
+        const env = {
+            PATH: process.env.PATH,
+            HOME: process.env.HOME,
+            TMPDIR: process.env.TMPDIR,
+            TMP: process.env.TMP,
+            TEMP: process.env.TEMP,
+            OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+            OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+            OPENAI_ORG_ID: process.env.OPENAI_ORG_ID,
+            OPENAI_PROJECT: process.env.OPENAI_PROJECT,
+            CODEX_HOME: process.env.CODEX_HOME,
+            CI: process.env.CI,
+            GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
+            NO_COLOR: process.env.NO_COLOR ?? '1',
+        };
+        return Object.fromEntries(Object.entries(env).filter(([, value]) => typeof value === 'string' && value.length > 0));
     }
     resolveModel(modelConf) {
         return modelConf === 'fast' ? 'codex-mini-latest' : 'gpt-5.3-codex';
