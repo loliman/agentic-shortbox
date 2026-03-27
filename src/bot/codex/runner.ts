@@ -370,7 +370,7 @@ export class CodexRunner {
     stdout?: string | null,
     stderr?: string | null
   ): T {
-    const directCandidate = this.extractJsonCandidate(raw, schema);
+    const directCandidate = this.extractJsonCandidate(raw, schema, true);
     if (directCandidate) {
       core.info('[CodexRunner] Structured output source: output-last-message');
       this.logStructuredCandidate(directCandidate);
@@ -381,7 +381,8 @@ export class CodexRunner {
       [stdout, stderr]
         .filter((chunk): chunk is string => typeof chunk === 'string' && chunk.trim().length > 0)
         .join('\n'),
-      schema
+      schema,
+      false
     );
 
     if (fallbackCandidate) {
@@ -408,7 +409,11 @@ export class CodexRunner {
     core.info('[CodexRunner] Structured output candidate end');
   }
 
-  private extractJsonCandidate(content?: string | null, schema?: Record<string, unknown>): string | null {
+  private extractJsonCandidate(
+    content?: string | null,
+    schema?: Record<string, unknown>,
+    allowLooseExtraction: boolean = true
+  ): string | null {
     if (!content) {
       return null;
     }
@@ -431,6 +436,10 @@ export class CodexRunner {
         } catch {
           // Keep searching.
         }
+      }
+
+      if (!allowLooseExtraction) {
+        return null;
       }
 
       const preferredStarter = schema?.type === 'array' ? '[' : schema?.type === 'object' ? '{' : null;

@@ -32882,7 +32882,7 @@ class CodexRunner {
         }
     }
     parseStructuredOutput(raw, schema, stdout, stderr) {
-        const directCandidate = this.extractJsonCandidate(raw, schema);
+        const directCandidate = this.extractJsonCandidate(raw, schema, true);
         if (directCandidate) {
             core.info('[CodexRunner] Structured output source: output-last-message');
             this.logStructuredCandidate(directCandidate);
@@ -32890,7 +32890,7 @@ class CodexRunner {
         }
         const fallbackCandidate = this.extractJsonCandidate([stdout, stderr]
             .filter((chunk) => typeof chunk === 'string' && chunk.trim().length > 0)
-            .join('\n'), schema);
+            .join('\n'), schema, false);
         if (fallbackCandidate) {
             core.info('[CodexRunner] Structured output source: stdout/stderr fallback');
             this.logStructuredCandidate(fallbackCandidate);
@@ -32910,7 +32910,7 @@ class CodexRunner {
         core.info(candidate);
         core.info('[CodexRunner] Structured output candidate end');
     }
-    extractJsonCandidate(content, schema) {
+    extractJsonCandidate(content, schema, allowLooseExtraction = true) {
         if (!content) {
             return null;
         }
@@ -32933,6 +32933,9 @@ class CodexRunner {
                 catch {
                     // Keep searching.
                 }
+            }
+            if (!allowLooseExtraction) {
+                return null;
             }
             const preferredStarter = schema?.type === 'array' ? '[' : schema?.type === 'object' ? '{' : null;
             const candidates = this.collectBalancedJsonCandidates(trimmed).sort((left, right) => {

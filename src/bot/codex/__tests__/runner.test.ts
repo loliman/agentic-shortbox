@@ -160,7 +160,7 @@ describe('CodexRunner', () => {
   it('falls back to JSON found in stdout when the final message file is empty', async () => {
     (spawnSync as jest.Mock).mockReturnValue({
       status: 0,
-      stdout: 'Some logs before\n[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"}]\n',
+      stdout: '```json\n[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"}]\n```',
       stderr: '',
     });
     (fs.readFileSync as jest.Mock).mockReturnValue('');
@@ -170,6 +170,20 @@ describe('CodexRunner', () => {
       { title: 'Spec 1', specMarkdown: '# Feature: Spec 1' },
     ]);
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Structured output source: stdout/stderr fallback');
+  });
+
+  it('does not treat incidental bracket output in stdout as structured JSON', async () => {
+    (spawnSync as jest.Mock).mockReturnValue({
+      status: 0,
+      stdout: 'progress output\n[ ]\nmore logs\n',
+      stderr: '',
+    });
+    (fs.readFileSync as jest.Mock).mockReturnValue('');
+
+    const runner = new CodexRunner();
+    await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
+      'Codex returned a non-JSON final message.'
+    );
   });
 
   it('extracts JSON from fenced output when present', async () => {
