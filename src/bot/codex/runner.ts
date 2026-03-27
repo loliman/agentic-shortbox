@@ -265,7 +265,15 @@ export class CodexRunner {
       }
 
       if (result.status !== 0) {
+        this.logCodexStreams(result.stdout, result.stderr);
         throw new Error(this.formatCodexFailure(result.stderr, result.stdout));
+      }
+
+      if (!fs.existsSync(outputPath)) {
+        this.logCodexStreams(result.stdout, result.stderr);
+        throw new Error(
+          'Codex finished without writing the expected output-last-message file.'
+        );
       }
 
       const raw = fs.readFileSync(outputPath, 'utf8').trim();
@@ -340,6 +348,20 @@ export class CodexRunner {
 
     const tail = lines.slice(-20).join('\n').trim();
     return tail || 'Codex execution failed.';
+  }
+
+  private logCodexStreams(stdout?: string | null, stderr?: string | null): void {
+    if (typeof stdout === 'string' && stdout.trim().length > 0) {
+      core.info('[CodexRunner] Codex stdout begin');
+      core.info(stdout);
+      core.info('[CodexRunner] Codex stdout end');
+    }
+
+    if (typeof stderr === 'string' && stderr.trim().length > 0) {
+      core.info('[CodexRunner] Codex stderr begin');
+      core.info(stderr);
+      core.info('[CodexRunner] Codex stderr end');
+    }
   }
 
   private parseStructuredOutput<T>(

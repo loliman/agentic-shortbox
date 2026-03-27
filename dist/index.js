@@ -32798,7 +32798,12 @@ class CodexRunner {
                 throw new Error(`Failed to start Codex CLI: ${result.error.message}`);
             }
             if (result.status !== 0) {
+                this.logCodexStreams(result.stdout, result.stderr);
                 throw new Error(this.formatCodexFailure(result.stderr, result.stdout));
+            }
+            if (!fs_1.default.existsSync(outputPath)) {
+                this.logCodexStreams(result.stdout, result.stderr);
+                throw new Error('Codex finished without writing the expected output-last-message file.');
             }
             const raw = fs_1.default.readFileSync(outputPath, 'utf8').trim();
             return this.parseStructuredOutput(raw, schema, result.stdout, result.stderr);
@@ -32863,6 +32868,18 @@ class CodexRunner {
             .filter((line) => line.trim().length > 0);
         const tail = lines.slice(-20).join('\n').trim();
         return tail || 'Codex execution failed.';
+    }
+    logCodexStreams(stdout, stderr) {
+        if (typeof stdout === 'string' && stdout.trim().length > 0) {
+            core.info('[CodexRunner] Codex stdout begin');
+            core.info(stdout);
+            core.info('[CodexRunner] Codex stdout end');
+        }
+        if (typeof stderr === 'string' && stderr.trim().length > 0) {
+            core.info('[CodexRunner] Codex stderr begin');
+            core.info(stderr);
+            core.info('[CodexRunner] Codex stderr end');
+        }
     }
     parseStructuredOutput(raw, schema, stdout, stderr) {
         const directCandidate = this.extractJsonCandidate(raw, schema);

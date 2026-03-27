@@ -97,6 +97,9 @@ describe('CodexRunner', () => {
 
     const runner = new CodexRunner();
     await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow('codex failed hard');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Codex stderr begin');
+    expect(core.info).toHaveBeenCalledWith('codex failed hard');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Codex stderr end');
   });
 
   it('surfaces only the tail of long Codex logs', async () => {
@@ -201,6 +204,21 @@ describe('CodexRunner', () => {
         }),
       })
     );
+  });
+
+  it('fails clearly when Codex does not write the output-last-message file', async () => {
+    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: 'codex ran', stderr: '' });
+    (fs.existsSync as jest.Mock)
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false);
+
+    const runner = new CodexRunner();
+    await expect(runner.generateImplementationPlan('Feature', 'Body', false, 'fast')).rejects.toThrow(
+      'Codex finished without writing the expected output-last-message file.'
+    );
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Codex stdout begin');
+    expect(core.info).toHaveBeenCalledWith('codex ran');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Codex stdout end');
   });
 
   it('rejects empty arrays for epic split results', async () => {
