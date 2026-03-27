@@ -64,31 +64,6 @@ export async function main() {
       return;
     }
 
-    // 3. Rework Commands on PR Review Comments
-    if (eventName === 'pull_request_review_comment' && github.context.payload.action === 'created') {
-      const pullRequest = github.context.payload.pull_request;
-      const comment = github.context.payload.comment;
-
-      if (!pullRequest || !comment) return;
-      if (comment.user?.type === 'Bot') {
-        core.info('[Action] Ignoring bot-authored review comment event.');
-        return;
-      }
-
-      const labels = pullRequest.labels ? pullRequest.labels.map((l: any) => l.name) : [];
-
-      core.info(`[Action] Parsing review comment from @${comment.user.login} on PR #${pullRequest.number}`);
-
-      await controller.handleCommand({
-        number: pullRequest.number,
-        author: comment.user.login,
-        body: comment.body,
-        labels,
-        isPR: true
-      });
-      return;
-    }
-
   } catch (error: any) {
     core.setFailed(`[AI Bot Execution Error]: ${error.message}`);
     process.exit(1);
