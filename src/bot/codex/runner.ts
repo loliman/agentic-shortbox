@@ -34,6 +34,11 @@ interface CodexTaskContext {
   outputContract: string;
 }
 
+interface CodexCliCommand {
+  executable: string;
+  args: string[];
+}
+
 export class CodexRunner {
   async generateEpicSplit(title: string, body: string, modelConf: string = 'strong'): Promise<EpicSplitTask[]> {
     return this.runStructuredTask<EpicSplitTask[]>(
@@ -210,6 +215,7 @@ export class CodexRunner {
     }
 
     const prompt = this.buildPrompt(task);
+    const codexCommand = this.resolveCodexCommand();
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-runner-'));
     const schemaPath = path.join(tempDir, 'schema.json');
     const outputPath = path.join(tempDir, 'output.json');
@@ -217,8 +223,9 @@ export class CodexRunner {
     fs.writeFileSync(schemaPath, JSON.stringify(schema, null, 2), 'utf8');
 
     const result = spawnSync(
-      path.resolve(process.cwd(), 'node_modules/.bin/codex'),
+      codexCommand.executable,
       [
+        ...codexCommand.args,
         'exec',
         '-',
         '--full-auto',
@@ -242,6 +249,10 @@ export class CodexRunner {
     );
 
     try {
+      if (result.error) {
+        throw new Error(`Failed to start Codex CLI: ${result.error.message}`);
+      }
+
       if (result.status !== 0) {
         throw new Error((result.stderr || result.stdout || 'Codex execution failed.').trim());
       }
@@ -277,6 +288,28 @@ export class CodexRunner {
       '',
       'Return only the final structured output that matches the required schema.',
     ].join('\n');
+  }
+
+  private resolveCodexCommand(): CodexCliCommand {
+    const directBinary = path.resolve(process.cwd(), 'node_modules/.bin/codex');
+    if (fs.existsSync(directBinary)) {
+      return {
+        executable: directBinary,
+        args: [],
+      };
+    }
+
+    const packagedEntrypoint = path.resolve(process.cwd(), 'node_modules/@openai/codex/bin/codex.js');
+    if (fs.existsSync(packagedEntrypoint)) {
+      return {
+        executable: process.execPath,
+        args: [packagedEntrypoint],
+      };
+    }
+
+    throw new Error(
+      'Codex CLI is not available in this checkout. Ensure project dependencies are installed and `@openai/codex` is present before running the action.'
+    );
   }
 
   private resolveModel(modelConf: string): string {

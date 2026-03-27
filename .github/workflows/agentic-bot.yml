@@ -23,8 +23,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --registry https://registry.npmjs.org
+
       # Self-referencing: this repo IS the action.
-      # External repos replace ./ with loliman/agentic-shortbox@v1.0.0
+      # External repos replace ./ with loliman/agentic-shortbox@v1.1.0
       - name: Run AI Bot
         uses: ./
         env:

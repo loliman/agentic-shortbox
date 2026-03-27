@@ -18,6 +18,7 @@ describe('CodexRunner', () => {
     (fs.mkdtempSync as jest.Mock).mockReturnValue('/tmp/codex-runner-123');
     (fs.writeFileSync as jest.Mock).mockImplementation(() => undefined);
     (fs.rmSync as jest.Mock).mockImplementation(() => undefined);
+    (fs.existsSync as jest.Mock).mockReturnValue(true);
   });
 
   afterAll(() => {
@@ -70,5 +71,38 @@ describe('CodexRunner', () => {
 
     const runner = new CodexRunner();
     await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow('codex failed hard');
+  });
+
+  it('surfaces Codex spawn failures with the underlying error message', async () => {
+    (spawnSync as jest.Mock).mockReturnValue({ status: null, stdout: '', stderr: '', error: new Error('spawn ENOENT') });
+
+    const runner = new CodexRunner();
+    await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow('Failed to start Codex CLI: spawn ENOENT');
+  });
+
+  it('falls back to the packaged codex.js entrypoint when .bin/codex is unavailable', async () => {
+    (fs.existsSync as jest.Mock)
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
+    (fs.readFileSync as jest.Mock).mockReturnValue('{"action":"plan","content":"# Plan"}');
+
+    const runner = new CodexRunner();
+    await runner.generateImplementationPlan('Feature', 'Body', false, 'fast');
+
+    expect(spawnSync).toHaveBeenCalledWith(
+      process.execPath,
+      expect.arrayContaining([expect.stringContaining('node_modules/@openai/codex/bin/codex.js'), 'exec', '-']),
+      expect.any(Object)
+    );
+  });
+
+  it('fails clearly when Codex CLI is not installed in the checkout', async () => {
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
+
+    const runner = new CodexRunner();
+    await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
+      'Codex CLI is not available in this checkout. Ensure project dependencies are installed and `@openai/codex` is present before running the action.'
+    );
   });
 });

@@ -32723,11 +32723,13 @@ class CodexRunner {
             throw new MissingConfigurationError('Codex requires `OPENAI_API_KEY`, but no OpenAI API key is configured for this repository.');
         }
         const prompt = this.buildPrompt(task);
+        const codexCommand = this.resolveCodexCommand();
         const tempDir = fs_1.default.mkdtempSync(path_1.default.join(os_1.default.tmpdir(), 'codex-runner-'));
         const schemaPath = path_1.default.join(tempDir, 'schema.json');
         const outputPath = path_1.default.join(tempDir, 'output.json');
         fs_1.default.writeFileSync(schemaPath, JSON.stringify(schema, null, 2), 'utf8');
-        const result = (0, child_process_1.spawnSync)(path_1.default.resolve(process.cwd(), 'node_modules/.bin/codex'), [
+        const result = (0, child_process_1.spawnSync)(codexCommand.executable, [
+            ...codexCommand.args,
             'exec',
             '-',
             '--full-auto',
@@ -32748,6 +32750,9 @@ class CodexRunner {
             encoding: 'utf8',
         });
         try {
+            if (result.error) {
+                throw new Error(`Failed to start Codex CLI: ${result.error.message}`);
+            }
             if (result.status !== 0) {
                 throw new Error((result.stderr || result.stdout || 'Codex execution failed.').trim());
             }
@@ -32782,6 +32787,23 @@ class CodexRunner {
             '',
             'Return only the final structured output that matches the required schema.',
         ].join('\n');
+    }
+    resolveCodexCommand() {
+        const directBinary = path_1.default.resolve(process.cwd(), 'node_modules/.bin/codex');
+        if (fs_1.default.existsSync(directBinary)) {
+            return {
+                executable: directBinary,
+                args: [],
+            };
+        }
+        const packagedEntrypoint = path_1.default.resolve(process.cwd(), 'node_modules/@openai/codex/bin/codex.js');
+        if (fs_1.default.existsSync(packagedEntrypoint)) {
+            return {
+                executable: process.execPath,
+                args: [packagedEntrypoint],
+            };
+        }
+        throw new Error('Codex CLI is not available in this checkout. Ensure project dependencies are installed and `@openai/codex` is present before running the action.');
     }
     resolveModel(modelConf) {
         return modelConf === 'fast' ? 'codex-mini-latest' : 'gpt-5.3-codex';
