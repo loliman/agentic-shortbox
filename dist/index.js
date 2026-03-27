@@ -32620,6 +32620,7 @@ class CodexRunner {
                 'Do not return an empty array.',
                 'If the parent issue feels too small to split cleanly, decompose it into setup, implementation, and verification oriented child features anyway.',
                 'Each child feature must be specific, reviewable, and narrow enough to become its own GitHub issue.',
+                `Use this visible issue title pattern exactly: "${title} / Spec NN: <Short Child Scope>" where NN is a zero-padded sequence such as 01, 02, 03.`,
                 'For each child feature, produce a GitHub issue title and a markdown body that follows `specs/templates/feature-spec.md` exactly.',
                 'Every `specMarkdown` must be a complete filled-out spec, not a template stub and not a summary.',
                 'Do not implement code and do not modify repository files.',
@@ -32652,7 +32653,7 @@ class CodexRunner {
                 },
             },
         }, modelConf);
-        return this.validateEpicSplitResult(result);
+        return this.normalizeEpicSplitTitles(title, this.validateEpicSplitResult(result));
     }
     async generateImplementationPlan(title, body, force, modelConf = 'strong') {
         return this.runStructuredTask({
@@ -32781,6 +32782,7 @@ class CodexRunner {
         core.info(`[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: ${codexEnv.OPENAI_API_KEY?.startsWith('sk-') ? 'yes' : 'no'}`);
         core.info(`[CodexRunner] OPENAI_BASE_URL: ${codexEnv.OPENAI_BASE_URL ?? '(not set)'}`);
         core.info(`[CodexRunner] Resolved model: ${this.resolveModel(modelConf)}`);
+        core.info(`[CodexRunner] Resolved sandbox: ${this.resolveSandboxMode()}`);
         core.info('[CodexRunner] Prompt begin');
         core.info(prompt);
         core.info('[CodexRunner] Prompt end');
@@ -32815,7 +32817,7 @@ class CodexRunner {
         const thread = codex.startThread({
             workingDirectory: process.cwd(),
             model: this.resolveModel(modelConf),
-            sandboxMode: 'workspace-write',
+            sandboxMode: this.resolveSandboxMode(),
             approvalPolicy: 'never',
             modelReasoningEffort: 'medium',
         });
@@ -33030,6 +33032,47 @@ class CodexRunner {
         }
         return result.tasks;
     }
+    normalizeEpicSplitTitles(parentTitle, tasks) {
+        const normalizedParentTitle = this.normalizeTitleWhitespace(parentTitle) || 'Parent Issue';
+        return tasks.map((task, index) => {
+            const sequence = String(index + 1).padStart(2, '0');
+            const childScope = this.normalizeChildScope(task.title, task.specMarkdown, normalizedParentTitle) || `Child Scope ${sequence}`;
+            return {
+                ...task,
+                title: `${normalizedParentTitle} / Spec ${sequence}: ${childScope}`,
+            };
+        });
+    }
+    normalizeChildScope(title, specMarkdown, parentTitle) {
+        const candidates = [
+            this.stripGeneratedTitlePrefix(title),
+            this.extractFeatureHeading(specMarkdown),
+        ];
+        for (const candidate of candidates) {
+            const normalized = this.normalizeTitleWhitespace(candidate);
+            if (!normalized) {
+                continue;
+            }
+            if (normalized.localeCompare(parentTitle, undefined, { sensitivity: 'accent' }) === 0) {
+                continue;
+            }
+            return normalized;
+        }
+        return '';
+    }
+    stripGeneratedTitlePrefix(title) {
+        const withoutPrefix = title
+            .replace(/^\s*(spec(?:ification)?|task|child issue|child feature)\s*[-:#/]?\s*\d*\s*[-:#/]?\s*/i, '')
+            .replace(/^\s*\d+\s*[-:./)]\s*/, '');
+        return withoutPrefix;
+    }
+    extractFeatureHeading(specMarkdown) {
+        const match = specMarkdown.match(/^#\s*Feature:\s*(.+)$/im);
+        return match?.[1]?.trim() ?? '';
+    }
+    normalizeTitleWhitespace(value) {
+        return value.replace(/\s+/g, ' ').trim();
+    }
     isRecord(value) {
         return typeof value === 'object' && value !== null && !Array.isArray(value);
     }
@@ -33064,6 +33107,13 @@ class CodexRunner {
     }
     resolveModel(modelConf) {
         return modelConf === 'fast' ? 'gpt-5-mini' : 'US-gpt-5.3-codex';
+    }
+    resolveSandboxMode() {
+        const configuredMode = process.env.CODEX_SANDBOX_MODE?.trim();
+        if (configuredMode === 'read-only' || configuredMode === 'workspace-write' || configuredMode === 'danger-full-access') {
+            return configuredMode;
+        }
+        return 'workspace-write';
     }
 }
 exports.CodexRunner = CodexRunner;
@@ -33256,6 +33306,7 @@ class BotController {
                 title: spec.title,
                 body: spec.specMarkdown
             });
+            await this.handleWelcome(created.data.number);
             links.push(`#${created.data.number} - ${spec.title}`);
         }
         await this.postStatus(payload.number, [

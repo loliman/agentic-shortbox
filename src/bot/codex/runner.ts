@@ -46,6 +46,8 @@ interface CodexSdkTurn {
   items: Array<{ type: string; [key: string]: unknown }>;
 }
 
+type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
+
 export class CodexRunner {
   async generateEpicSplit(title: string, body: string, modelConf: string = 'strong'): Promise<EpicSplitTask[]> {
     const result = await this.runStructuredTask<EpicSplitResult>(
@@ -59,6 +61,7 @@ export class CodexRunner {
           'Do not return an empty array.',
           'If the parent issue feels too small to split cleanly, decompose it into setup, implementation, and verification oriented child features anyway.',
           'Each child feature must be specific, reviewable, and narrow enough to become its own GitHub issue.',
+          `Use this visible issue title pattern exactly: "${title} / Spec NN: <Short Child Scope>" where NN is a zero-padded sequence such as 01, 02, 03.`,
           'For each child feature, produce a GitHub issue title and a markdown body that follows `specs/templates/feature-spec.md` exactly.',
           'Every `specMarkdown` must be a complete filled-out spec, not a template stub and not a summary.',
           'Do not implement code and do not modify repository files.',
@@ -95,7 +98,7 @@ export class CodexRunner {
       modelConf
     );
 
-    return this.validateEpicSplitResult(result);
+    return this.normalizeEpicSplitTitles(title, this.validateEpicSplitResult(result));
   }
 
   async generateImplementationPlan(title: string, body: string, force: boolean, modelConf: string = 'strong'): Promise<PlanResult> {
@@ -249,6 +252,7 @@ export class CodexRunner {
     );
     core.info(`[CodexRunner] OPENAI_BASE_URL: ${codexEnv.OPENAI_BASE_URL ?? '(not set)'}`);
     core.info(`[CodexRunner] Resolved model: ${this.resolveModel(modelConf)}`);
+    core.info(`[CodexRunner] Resolved sandbox: ${this.resolveSandboxMode()}`);
     core.info('[CodexRunner] Prompt begin');
     core.info(prompt);
     core.info('[CodexRunner] Prompt end');
@@ -293,7 +297,7 @@ export class CodexRunner {
     const thread = codex.startThread({
       workingDirectory: process.cwd(),
       model: this.resolveModel(modelConf),
-      sandboxMode: 'workspace-write',
+      sandboxMode: this.resolveSandboxMode(),
       approvalPolicy: 'never',
       modelReasoningEffort: 'medium',
     });
@@ -555,6 +559,60 @@ export class CodexRunner {
     return result.tasks;
   }
 
+  private normalizeEpicSplitTitles(parentTitle: string, tasks: EpicSplitTask[]): EpicSplitTask[] {
+    const normalizedParentTitle = this.normalizeTitleWhitespace(parentTitle) || 'Parent Issue';
+
+    return tasks.map((task, index) => {
+      const sequence = String(index + 1).padStart(2, '0');
+      const childScope =
+        this.normalizeChildScope(task.title, task.specMarkdown, normalizedParentTitle) || `Child Scope ${sequence}`;
+
+      return {
+        ...task,
+        title: `${normalizedParentTitle} / Spec ${sequence}: ${childScope}`,
+      };
+    });
+  }
+
+  private normalizeChildScope(title: string, specMarkdown: string, parentTitle: string): string {
+    const candidates = [
+      this.stripGeneratedTitlePrefix(title),
+      this.extractFeatureHeading(specMarkdown),
+    ];
+
+    for (const candidate of candidates) {
+      const normalized = this.normalizeTitleWhitespace(candidate);
+      if (!normalized) {
+        continue;
+      }
+
+      if (normalized.localeCompare(parentTitle, undefined, { sensitivity: 'accent' }) === 0) {
+        continue;
+      }
+
+      return normalized;
+    }
+
+    return '';
+  }
+
+  private stripGeneratedTitlePrefix(title: string): string {
+    const withoutPrefix = title
+      .replace(/^\s*(spec(?:ification)?|task|child issue|child feature)\s*[-:#/]?\s*\d*\s*[-:#/]?\s*/i, '')
+      .replace(/^\s*\d+\s*[-:./)]\s*/, '');
+
+    return withoutPrefix;
+  }
+
+  private extractFeatureHeading(specMarkdown: string): string {
+    const match = specMarkdown.match(/^#\s*Feature:\s*(.+)$/im);
+    return match?.[1]?.trim() ?? '';
+  }
+
+  private normalizeTitleWhitespace(value: string): string {
+    return value.replace(/\s+/g, ' ').trim();
+  }
+
   private isRecord(value: unknown): value is Record<string, any> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
@@ -597,5 +655,14 @@ export class CodexRunner {
 
   private resolveModel(modelConf: string): string {
     return modelConf === 'fast' ? 'gpt-5-mini' : 'US-gpt-5.3-codex';
+  }
+
+  private resolveSandboxMode(): CodexSandboxMode {
+    const configuredMode = process.env.CODEX_SANDBOX_MODE?.trim();
+    if (configuredMode === 'read-only' || configuredMode === 'workspace-write' || configuredMode === 'danger-full-access') {
+      return configuredMode;
+    }
+
+    return 'workspace-write';
   }
 }

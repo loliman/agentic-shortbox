@@ -112,6 +112,10 @@ describe('BotController', () => {
     const runner = (CodexRunner as jest.Mock).mock.results.at(-1)?.value;
     expect(runner.generateEpicSplit).toHaveBeenCalledWith('Test', 'Body', 'strong');
     expect(mockOctokit.rest.issues.create).toHaveBeenCalledTimes(2);
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 42,
+      body: expect.stringContaining('Hello! I am your AI Developer Bot.'),
+    }));
   });
 
   it('fails specification splitting instead of posting an empty success message', async () => {

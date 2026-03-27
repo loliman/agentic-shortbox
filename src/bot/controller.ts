@@ -181,6 +181,7 @@ export class BotController {
           title: spec.title,
          body: spec.specMarkdown
        });
+       await this.handleWelcome(created.data.number);
        links.push(`#${created.data.number} - ${spec.title}`);
     }
 

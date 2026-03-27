@@ -34,7 +34,8 @@ describe('CodexRunner', () => {
   it('uses a stricter specification prompt for epic splitting', async () => {
     const runner = new CodexRunner();
     const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
-      finalResponse: '{"tasks":[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"},{"title":"Spec 2","specMarkdown":"# Feature: Spec 2"},{"title":"Spec 3","specMarkdown":"# Feature: Spec 3"}]}',
+      finalResponse:
+        '{"tasks":[{"title":"Spec 1: Data Model","specMarkdown":"# Feature: Data Model"},{"title":"Spec 2: Output Marker","specMarkdown":"# Feature: Output Marker"},{"title":"Spec 3: Verification","specMarkdown":"# Feature: Verification"}]}',
       items: [],
     });
     await runner.generateEpicSplit('Epic', 'Spec');
@@ -47,6 +48,7 @@ describe('CodexRunner', () => {
     );
     expect(executeSpy.mock.calls[0][0]).toContain('Do not return an empty array.');
     expect(executeSpy.mock.calls[0][0]).toContain('The `tasks` array must contain 3 to 5 items.');
+    expect(executeSpy.mock.calls[0][0]).toContain('Use this visible issue title pattern exactly: "Epic / Spec NN: <Short Child Scope>"');
     expect(executeSpy.mock.calls[0][0]).toContain('Return only valid JSON with no markdown fences and no commentary.');
   });
 
@@ -76,6 +78,7 @@ describe('CodexRunner', () => {
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: no');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_BASE_URL: https://adesso-ai-hub.3asabc.de/v1');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Resolved model: gpt-5-mini');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Resolved sandbox: workspace-write');
   });
 
   it('asks Codex to gather repository context itself for implementation', async () => {
@@ -119,13 +122,28 @@ describe('CodexRunner', () => {
     const runner = new CodexRunner();
     jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
       finalResponse:
-        '```json\n{"tasks":[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"},{"title":"Spec 2","specMarkdown":"# Feature: Spec 2"},{"title":"Spec 3","specMarkdown":"# Feature: Spec 3"}]}\n```',
+        '```json\n{"tasks":[{"title":"Spec 1: Data Model","specMarkdown":"# Feature: Data Model"},{"title":"Spec 2: Output Marker","specMarkdown":"# Feature: Output Marker"},{"title":"Spec 3: Verification","specMarkdown":"# Feature: Verification"}]}\n```',
       items: [],
     });
     await expect(runner.generateEpicSplit('Epic', 'Spec')).resolves.toEqual([
-      { title: 'Spec 1', specMarkdown: '# Feature: Spec 1' },
-      { title: 'Spec 2', specMarkdown: '# Feature: Spec 2' },
-      { title: 'Spec 3', specMarkdown: '# Feature: Spec 3' },
+      { title: 'Epic / Spec 01: Data Model', specMarkdown: '# Feature: Data Model' },
+      { title: 'Epic / Spec 02: Output Marker', specMarkdown: '# Feature: Output Marker' },
+      { title: 'Epic / Spec 03: Verification', specMarkdown: '# Feature: Verification' },
+    ]);
+  });
+
+  it('normalizes generated child issue titles into a visible shared pattern', async () => {
+    const runner = new CodexRunner();
+    jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse:
+        '{"tasks":[{"title":"Spec 7: Add Banner Rendering","specMarkdown":"# Feature: Add Banner Rendering"},{"title":"Verification","specMarkdown":"# Feature: Verification"},{"title":"Test feature","specMarkdown":"# Feature: Cleanup"}]}',
+      items: [],
+    });
+
+    await expect(runner.generateEpicSplit('Test feature', 'Spec')).resolves.toEqual([
+      { title: 'Test feature / Spec 01: Add Banner Rendering', specMarkdown: '# Feature: Add Banner Rendering' },
+      { title: 'Test feature / Spec 02: Verification', specMarkdown: '# Feature: Verification' },
+      { title: 'Test feature / Spec 03: Cleanup', specMarkdown: '# Feature: Cleanup' },
     ]);
   });
 
@@ -229,6 +247,25 @@ describe('CodexRunner', () => {
     const runner = new CodexRunner() as any;
     expect(runner.resolveModel('fast')).toBe('gpt-5-mini');
     expect(runner.resolveModel('strong')).toBe('US-gpt-5.3-codex');
+  });
+
+  it('uses an explicit sandbox override when configured', async () => {
+    process.env = {
+      OPENAI_API_KEY: 'test-key',
+      PATH: '/usr/bin',
+      CODEX_SANDBOX_MODE: 'danger-full-access',
+    } as NodeJS.ProcessEnv;
+    const runner = new CodexRunner();
+    const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse: '{"action":"plan","content":"# Plan"}',
+      items: [],
+    });
+
+    await runner.generateImplementationPlan('Feature', 'Body', false, 'fast');
+
+    expect(executeSpy).toHaveBeenCalledWith(expect.any(String), expect.any(Object), 'fast', expect.any(Object));
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Resolved sandbox: danger-full-access');
+    expect((runner as any).resolveSandboxMode()).toBe('danger-full-access');
   });
 
   it('rejects empty arrays for epic split results', async () => {
