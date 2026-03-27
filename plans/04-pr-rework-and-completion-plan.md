@@ -23,7 +23,7 @@ To fully support the AI-first workflow lifecycle, we need to handle the post-imp
 ## Workflow / State Changes
 - State loops during PR:
   - `implementing` (via AI PR Creation) ➔ `in-review`
-  - `in-review` + `ready for rework` on the PR ➔ `reworking`
+  - `in-review` + `ready for rework` on the PR or in the submitted review text ➔ `reworking`
   - `reworking` (via AI PR update) ➔ `in-review`
   - `in-review` + (Human Merges) ➔ `done` (closes parent Issue).
 
