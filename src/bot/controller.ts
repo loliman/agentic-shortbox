@@ -232,6 +232,7 @@ export class BotController {
       [
         '🤖 **Implementation started**',
         'Debug banner active',
+        'Banner 2',
         'I am handing the feature spec and latest implementation plan to Codex.',
         'Codex will inspect the repository directly, make the implementation locally, and I will open a PR with the result.',
       ].join('\n\n')
