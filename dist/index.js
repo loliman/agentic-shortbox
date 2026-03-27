@@ -52010,7 +52010,10 @@ class LLMClient {
     gemini;
     constructor() {
         if (process.env.OPENAI_API_KEY) {
-            this.openai = new openai_1.OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+            this.openai = new openai_1.OpenAI({
+                apiKey: process.env.OPENAI_API_KEY,
+                baseURL: "https://adesso-ai-hub.3asabc.de/v1"
+            });
         }
         if (process.env.GEMINI_API_KEY) {
             this.gemini = new genai_1.GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
