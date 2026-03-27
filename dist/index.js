@@ -32754,7 +32754,7 @@ class CodexRunner {
                 throw new Error(`Failed to start Codex CLI: ${result.error.message}`);
             }
             if (result.status !== 0) {
-                throw new Error((result.stderr || result.stdout || 'Codex execution failed.').trim());
+                throw new Error(this.formatCodexFailure(result.stderr, result.stdout));
             }
             const raw = fs_1.default.readFileSync(outputPath, 'utf8').trim();
             return JSON.parse(raw);
@@ -32804,6 +32804,21 @@ class CodexRunner {
             };
         }
         throw new Error('Codex CLI is not available in this checkout. Ensure project dependencies are installed and `@openai/codex` is present before running the action.');
+    }
+    formatCodexFailure(stderr, stdout) {
+        const combined = [stderr, stdout]
+            .filter((chunk) => typeof chunk === 'string' && chunk.trim().length > 0)
+            .join('\n')
+            .trim();
+        if (!combined) {
+            return 'Codex execution failed.';
+        }
+        const lines = combined
+            .split('\n')
+            .map((line) => line.trimEnd())
+            .filter((line) => line.trim().length > 0);
+        const tail = lines.slice(-20).join('\n').trim();
+        return tail || 'Codex execution failed.';
     }
     resolveModel(modelConf) {
         return modelConf === 'fast' ? 'codex-mini-latest' : 'gpt-5.3-codex';

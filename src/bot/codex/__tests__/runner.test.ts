@@ -73,6 +73,16 @@ describe('CodexRunner', () => {
     await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow('codex failed hard');
   });
 
+  it('surfaces only the tail of long Codex logs', async () => {
+    const lines = Array.from({ length: 30 }, (_, index) => `line ${index + 1}`).join('\n');
+    (spawnSync as jest.Mock).mockReturnValue({ status: 1, stdout: lines, stderr: '' });
+
+    const runner = new CodexRunner();
+    await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
+      Array.from({ length: 20 }, (_, index) => `line ${index + 11}`).join('\n')
+    );
+  });
+
   it('surfaces Codex spawn failures with the underlying error message', async () => {
     (spawnSync as jest.Mock).mockReturnValue({ status: null, stdout: '', stderr: '', error: new Error('spawn ENOENT') });
 
