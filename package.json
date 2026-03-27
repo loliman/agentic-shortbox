@@ -1,35 +1,9 @@
 {
-  "name": "agentic-shortbox",
-  "version": "1.0.0",
-  "description": "A GitHub-native AI developer bot that plans, implements, and reviews code via Issue comments.",
-  "main": "dist/index.js",
-  "directories": {
-    "doc": "docs",
-    "lib": "lib"
-  },
-  "scripts": {
-    "test": "jest",
-    "build": "ncc build src/github/action.ts -o dist --source-map --license licenses.txt"
-  },
-  "keywords": ["github-actions", "ai", "bot", "llm", "openai", "gemini"],
-  "author": "christian-riese",
-  "license": "MIT",
-  "type": "commonjs",
-  "devDependencies": {
-    "@types/jest": "^30.0.0",
-    "@types/node": "^25.5.0",
-    "@vercel/ncc": "^0.38.4",
-    "jest": "^30.3.0",
-    "ts-jest": "^29.4.6",
-    "ts-node": "^10.9.2",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
-  },
   "dependencies": {
-    "@actions/core": "^1.10.1",
-    "@actions/github": "^5.1.1",
-    "@google/genai": "^1.46.0",
-    "openai": "^6.33.0",
-    "zod": "^4.3.6"
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "@types/jest": "^29.2.0"
   }
 }
