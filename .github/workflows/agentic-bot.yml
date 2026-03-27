@@ -33,7 +33,7 @@ jobs:
         run: npm ci --registry https://registry.npmjs.org
 
       # Self-referencing: this repo IS the action.
-      # External repos replace ./ with loliman/agentic-shortbox@v4.7.0
+      # External repos replace ./ with loliman/agentic-shortbox@v4.8.0
       - name: Run AI Bot
         uses: ./
         env:

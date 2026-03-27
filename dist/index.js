@@ -32611,7 +32611,7 @@ exports.MissingConfigurationError = MissingConfigurationError;
 class CodexRunner {
     async generateEpicSplit(title, body, modelConf = 'strong') {
         const result = await this.runStructuredTask({
-            commandName: 'ready for specification',
+            commandName: 'ready for breakdown',
             featureTitle: title,
             featureSpec: body || 'No issue body provided.',
             commandInstruction: [
@@ -32622,6 +32622,7 @@ class CodexRunner {
                 'Each child feature must be specific, reviewable, and narrow enough to become its own GitHub issue.',
                 `Use this visible issue title pattern exactly: "${title} / Spec NN: <Short Child Scope>" where NN is a zero-padded sequence such as 01, 02, 03.`,
                 'For each child feature, produce a GitHub issue title and a markdown body that follows `specs/templates/feature-spec.md` exactly.',
+                'Write each `specMarkdown` as a repository-governed artifact that is ready to be stored under `specs/` without further rewriting.',
                 'Every `specMarkdown` must be a complete filled-out spec, not a template stub and not a summary.',
                 'Do not implement code and do not modify repository files.',
             ].join('\n'),
@@ -32664,11 +32665,13 @@ class CodexRunner {
                 ? [
                     'Create a complete implementation plan now.',
                     'Read `plans/templates/implementation-plan.md` and follow its structure.',
+                    'Write the resulting markdown as a repository-governed artifact that is ready to be stored under `plans/` without further rewriting.',
                     'Do not ask clarifying questions.',
                 ].join('\n')
                 : [
                     'Decide whether the feature is specific enough to plan.',
                     'If it is specific enough, create a complete implementation plan using `plans/templates/implementation-plan.md`.',
+                    'When you do create a plan, write it as a repository-governed artifact that is ready to be stored under `plans/` without further rewriting.',
                     'If it is not specific enough, ask concise clarifying questions instead.',
                 ].join('\n'),
             outputContract: [
@@ -33202,9 +33205,10 @@ class BotController {
                     '2. Type `ready for planning` in a comment to generate an implementation plan.',
                     '3. Type `ready for planning without questions` if you want a forced plan with no clarification step.',
                     '4. Type `ready for implementation` to let Codex work in the checked-out repository and open a Pull Request.',
-                    '5. Type `ready for specification` to let Codex split this epic into child specs.',
+                    '5. Type `ready for breakdown` to let Codex split this epic into child specs.',
                 ].join('\n'),
                 'For every command, Codex is instructed to inspect and obey `AGENTS.md`, `docs/`, `plans/`, and `specs/` from the repository itself.',
+                '`ready for specification` remains supported as a compatibility alias for `ready for breakdown`.',
             ].join('\n\n')
             : [
                 '👋 **Hello! I am your AI Developer Bot.**',
@@ -33300,7 +33304,8 @@ class BotController {
     async handleSpecification(payload, config) {
         await this.postStatus(payload.number, [
             '🤖 **Specification started**',
-            'I am reviewing the current feature description and splitting it into child specs that follow the repository templates.',
+            'I am reviewing the current feature description and breaking it down into child specs that follow the repository templates.',
+            'The generated specs are expected to be repo-ready artifacts for `specs/`.',
         ].join('\n\n'));
         const issueData = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: payload.number });
         const agent = new runner_1.CodexRunner();
@@ -33320,7 +33325,8 @@ class BotController {
             links.push(`#${created.data.number} - ${spec.title}`);
         }
         await this.postStatus(payload.number, [
-            '✅ **Epic split completed.**',
+            '✅ **Breakdown completed.**',
+            `Created ${tasks.length} child issues using the shared title pattern \`<Parent> / Spec NN: <Scope>\`.`,
             'Here are your generated child tasks:',
             links.map(l => `- [ ] ${l}`).join('\n'),
         ].join('\n\n'));
@@ -33332,6 +33338,7 @@ class BotController {
             force
                 ? 'I am generating a full implementation plan without asking clarifying questions first.'
                 : 'I am reviewing the feature spec and deciding whether I can produce a full implementation plan or need clarification.',
+            'When a plan is generated, it is expected to be repo-ready markdown for `plans/`.',
         ].join('\n\n'));
         const issueData = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: payload.number });
         const agent = new runner_1.CodexRunner();
@@ -33341,7 +33348,7 @@ class BotController {
             await this.replaceStateLabel(payload.number, payload.labels, 'state:clarification_needed');
         }
         else {
-            await this.postStatus(payload.number, ['**Implementation Plan**', result.content].join('\n\n'));
+            await this.postStatus(payload.number, ['**Implementation Plan**', '_This plan is formatted as a repository-ready artifact for `plans/`._', result.content].join('\n\n'));
             await this.replaceStateLabel(payload.number, payload.labels, 'state:planned');
         }
     }
@@ -33364,6 +33371,11 @@ class BotController {
         // Git checkouts locally
         await git.checkoutNewBranch(branchName);
         const implementationResult = await agent.implementFeature(issueData.data.title || '', issueData.data.body || '', plan, config.model);
+        const hasImplementationChanges = await git.hasWorkingTreeChanges();
+        if (!hasImplementationChanges) {
+            throw new Error('Codex did not produce any working tree changes for this implementation. Aborting before creating a PR.');
+        }
+        const persistedArtifacts = await this.persistContextArtifacts(git, payload.number, issueData.data.title || '', issueData.data.body || '', plan);
         await git.commitAndPush(`Fix #${payload.number}: Auto implementation`, branchName);
         // Create PR via Octokit
         const pr = await this.octokit.rest.pulls.create({
@@ -33380,9 +33392,16 @@ class BotController {
         await this.postStatus(pr.data.number, this.buildPullRequestWelcomeMessage(payload.number, payload.author));
         await this.postStatus(payload.number, [
             `✅ **Code generated and pushed to PR #${pr.data.number}.**`,
+            `**Branch:** \`${branchName}\``,
             implementationResult.summary,
+            implementationResult.changedFiles.length
+                ? ['**Updated files:**', implementationResult.changedFiles.map((filePath) => `- \`${filePath}\``).join('\n')].join('\n')
+                : '**Updated files:**\n- Codex did not report any changed files.',
+            persistedArtifacts.length
+                ? ['**Persisted artifacts:**', persistedArtifacts.map((filePath) => `- \`${filePath}\``).join('\n')].join('\n')
+                : null,
             'Go review it!',
-        ].join('\n\n'));
+        ].filter((section) => Boolean(section)).join('\n\n'));
         await this.replaceStateLabel(payload.number, payload.labels, 'state:in-review');
     }
     // 6. PR REVIEW REWORK
@@ -33407,11 +33426,14 @@ class BotController {
         if (!hasChanges) {
             throw new Error(`Codex reported file changes (${result.changedFiles.join(', ') || 'none'}), but git status stayed clean. Aborting before commit.`);
         }
+        const persistedArtifacts = featureContext.issueNumber
+            ? await this.persistContextArtifacts(git, featureContext.issueNumber, featureContext.title, featureContext.spec, featureContext.plan)
+            : [];
         const pushed = await git.commitAndPush(`PR Rework: address review feedback`, headBranch);
         if (!pushed) {
             throw new Error('Codex did not produce any committed file changes for this rework. Aborting instead of claiming success.');
         }
-        await this.postStatus(payload.number, this.buildEditSummaryComment('🛠️ **Rework applied**', result.summary, result.changedFiles));
+        await this.postStatus(payload.number, this.buildEditSummaryComment('🛠️ **Rework applied**', result.summary, result.changedFiles, undefined, persistedArtifacts));
         await this.postStatus(payload.number, `✅ Addressed feedback pushed to ${headBranch}.`);
     }
     async handleReviewRefinement(payload, refinementInstruction, config) {
@@ -33434,11 +33456,14 @@ class BotController {
         if (!hasChanges) {
             throw new Error(`Codex reported file changes (${result.changedFiles.join(', ') || 'none'}), but git status stayed clean. Aborting before commit.`);
         }
+        const persistedArtifacts = featureContext.issueNumber
+            ? await this.persistContextArtifacts(git, featureContext.issueNumber, featureContext.title, featureContext.spec, featureContext.plan)
+            : [];
         const pushed = await git.commitAndPush('PR Refinement: apply requested polish', headBranch);
         if (!pushed) {
             throw new Error('Codex did not produce any committed file changes for this refinement. Aborting instead of claiming success.');
         }
-        await this.postStatus(payload.number, this.buildEditSummaryComment('✨ **Refinement applied**', result.summary, result.changedFiles, refinementInstruction));
+        await this.postStatus(payload.number, this.buildEditSummaryComment('✨ **Refinement applied**', result.summary, result.changedFiles, refinementInstruction, persistedArtifacts));
         await this.postStatus(payload.number, `✅ Refinement updates pushed to ${headBranch}.`);
     }
     // -- Utilities --
@@ -33476,7 +33501,7 @@ class BotController {
         }
         return reviewCommentLines.join('\n');
     }
-    buildEditSummaryComment(heading, summary, changedFiles, instruction) {
+    buildEditSummaryComment(heading, summary, changedFiles, instruction, persistedArtifacts = []) {
         return [
             heading,
             instruction ? ['**Instruction:**', instruction].join('\n') : null,
@@ -33484,6 +33509,9 @@ class BotController {
             changedFiles.length
                 ? ['**Updated files:**', changedFiles.map((filePath) => `- \`${filePath}\``).join('\n')].join('\n')
                 : '**Updated files:**\n- Codex did not report any changed files.',
+            persistedArtifacts.length
+                ? ['**Persisted artifacts:**', persistedArtifacts.map((filePath) => `- \`${filePath}\``).join('\n')].join('\n')
+                : null,
         ].filter((section) => Boolean(section)).join('\n\n');
     }
     async fetchOpenReviewThreads(prNumber) {
@@ -33584,6 +33612,7 @@ class BotController {
         const linkedIssueNumber = this.extractLinkedIssueNumber(prBody);
         if (!linkedIssueNumber) {
             return {
+                issueNumber: null,
                 title: prTitle,
                 spec: prBody || 'No linked issue specification found.',
                 plan: '',
@@ -33592,10 +33621,61 @@ class BotController {
         const issue = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: linkedIssueNumber });
         const plan = await this.getLatestImplementationPlan(linkedIssueNumber);
         return {
+            issueNumber: linkedIssueNumber,
             title: issue.data.title || prTitle,
             spec: issue.data.body || 'No linked issue specification found.',
             plan,
         };
+    }
+    async persistContextArtifacts(git, issueNumber, issueTitle, spec, plan) {
+        const operations = this.buildContextArtifactOperations(issueNumber, issueTitle, spec, plan);
+        if (operations.length === 0) {
+            return [];
+        }
+        await git.applyFileSystemChanges(operations);
+        return operations.map((operation) => operation.path);
+    }
+    buildContextArtifactOperations(issueNumber, issueTitle, spec, plan) {
+        const baseName = this.buildArtifactBaseName(issueNumber, issueTitle);
+        const operations = [];
+        const normalizedSpec = spec.trim();
+        const normalizedPlan = this.normalizePlanArtifact(plan);
+        if (normalizedSpec) {
+            operations.push({
+                path: `specs/${baseName}.md`,
+                content: normalizedSpec.endsWith('\n') ? normalizedSpec : `${normalizedSpec}\n`,
+            });
+        }
+        if (normalizedPlan) {
+            operations.push({
+                path: `plans/${baseName}-plan.md`,
+                content: normalizedPlan.endsWith('\n') ? normalizedPlan : `${normalizedPlan}\n`,
+            });
+        }
+        return operations;
+    }
+    buildArtifactBaseName(issueNumber, issueTitle) {
+        const prefix = String(issueNumber).padStart(2, '0');
+        const slug = issueTitle
+            .toLowerCase()
+            .normalize('NFKD')
+            .replace(/[^\w\s-]/g, '')
+            .trim()
+            .replace(/[\s_]+/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '')
+            .slice(0, 64);
+        return `${prefix}-${slug || 'artifact'}`;
+    }
+    normalizePlanArtifact(plan) {
+        const trimmed = plan.trim();
+        if (!trimmed) {
+            return '';
+        }
+        return trimmed
+            .replace(/^\*\*Implementation Plan\*\*\s*/i, '')
+            .replace(/^_This plan is formatted as a repository-ready artifact for `plans\/`\._\s*/i, '')
+            .trim();
     }
     extractLinkedIssueNumber(text) {
         const match = text.match(/Issue\s+#(\d+)/i);
@@ -33763,7 +33843,7 @@ exports.parseConfiguration = parseConfiguration;
  */
 function parseCommand(text) {
     const normalized = text.trim().toLowerCase();
-    if (normalized === 'ready for specification') {
+    if (normalized === 'ready for specification' || normalized === 'ready for breakdown') {
         return { type: 'define' };
     }
     if (normalized === 'ready for planning') {
@@ -33798,14 +33878,17 @@ function suggestCommand(text) {
     if (normalized.includes('ready to implement') || normalized.includes('ready for implement')) {
         return 'Did you mean `ready for implementation`?';
     }
-    if (normalized.includes('ready to define') || normalized.includes('ready for define')) {
-        return 'Did you mean `ready for specification`?';
+    if (normalized.includes('ready to define') ||
+        normalized.includes('ready for define') ||
+        normalized.includes('ready for specification') ||
+        normalized.includes('ready to breakdown')) {
+        return 'Did you mean `ready for breakdown`? You can still use `ready for specification` as a supported alias.';
     }
     if (normalized.startsWith('ready for refinement') && normalized === 'ready for refinement') {
         return 'Add the instruction in the same comment, for example `ready for refinement make the bot tone warmer`.';
     }
     if (normalized.startsWith('ready')) {
-        return 'Unknown command. Supported commands are `ready for specification`, `ready for planning`, `ready for planning without questions`, `ready for implementation`, `ready for rework`, and `ready for refinement <instruction>`.';
+        return 'Unknown command. Supported commands are `ready for breakdown` (alias: `ready for specification`), `ready for planning`, `ready for planning without questions`, `ready for implementation`, `ready for rework`, and `ready for refinement <instruction>`.';
     }
     return null;
 }

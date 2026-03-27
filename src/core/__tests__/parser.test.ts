@@ -11,8 +11,9 @@ describe('Command Parser', () => {
     expect(parseCommand('ready for implementation')).toEqual({ type: 'implement' });
   });
 
-  it('parses "ready for specification"', () => {
+  it('parses "ready for specification" and "ready for breakdown"', () => {
     expect(parseCommand('ready for specification')).toEqual({ type: 'define' });
+    expect(parseCommand('ready for breakdown')).toEqual({ type: 'define' });
   });
 
   it('parses "ready for rework"', () => {
@@ -37,6 +38,7 @@ describe('Command Parser', () => {
     expect(suggestCommand('ready for planning!')).toContain('ready for planning without questions');
     expect(suggestCommand('ready to plan')).toContain('ready for planning');
     expect(suggestCommand('ready for refinement')).toContain('Add the instruction');
+    expect(suggestCommand('ready to breakdown')).toContain('ready for breakdown');
     expect(suggestCommand('ready for banana')).toContain('Unknown command');
   });
 });

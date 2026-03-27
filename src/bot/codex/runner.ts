@@ -52,7 +52,7 @@ export class CodexRunner {
   async generateEpicSplit(title: string, body: string, modelConf: string = 'strong'): Promise<EpicSplitTask[]> {
     const result = await this.runStructuredTask<EpicSplitResult>(
       {
-        commandName: 'ready for specification',
+        commandName: 'ready for breakdown',
         featureTitle: title,
         featureSpec: body || 'No issue body provided.',
         commandInstruction: [
@@ -63,6 +63,7 @@ export class CodexRunner {
           'Each child feature must be specific, reviewable, and narrow enough to become its own GitHub issue.',
           `Use this visible issue title pattern exactly: "${title} / Spec NN: <Short Child Scope>" where NN is a zero-padded sequence such as 01, 02, 03.`,
           'For each child feature, produce a GitHub issue title and a markdown body that follows `specs/templates/feature-spec.md` exactly.',
+          'Write each `specMarkdown` as a repository-governed artifact that is ready to be stored under `specs/` without further rewriting.',
           'Every `specMarkdown` must be a complete filled-out spec, not a template stub and not a summary.',
           'Do not implement code and do not modify repository files.',
         ].join('\n'),
@@ -111,11 +112,13 @@ export class CodexRunner {
           ? [
               'Create a complete implementation plan now.',
               'Read `plans/templates/implementation-plan.md` and follow its structure.',
+              'Write the resulting markdown as a repository-governed artifact that is ready to be stored under `plans/` without further rewriting.',
               'Do not ask clarifying questions.',
             ].join('\n')
           : [
               'Decide whether the feature is specific enough to plan.',
               'If it is specific enough, create a complete implementation plan using `plans/templates/implementation-plan.md`.',
+              'When you do create a plan, write it as a repository-governed artifact that is ready to be stored under `plans/` without further rewriting.',
               'If it is not specific enough, ask concise clarifying questions instead.',
             ].join('\n'),
         outputContract: [

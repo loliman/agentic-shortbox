@@ -16,7 +16,7 @@ export interface AgentConfiguration {
 export function parseCommand(text: string): ParsedCommand | null {
   const normalized = text.trim().toLowerCase();
 
-  if (normalized === 'ready for specification') {
+  if (normalized === 'ready for specification' || normalized === 'ready for breakdown') {
     return { type: 'define' };
   }
 
@@ -63,8 +63,13 @@ export function suggestCommand(text: string): string | null {
     return 'Did you mean `ready for implementation`?';
   }
 
-  if (normalized.includes('ready to define') || normalized.includes('ready for define')) {
-    return 'Did you mean `ready for specification`?';
+  if (
+    normalized.includes('ready to define') ||
+    normalized.includes('ready for define') ||
+    normalized.includes('ready for specification') ||
+    normalized.includes('ready to breakdown')
+  ) {
+    return 'Did you mean `ready for breakdown`? You can still use `ready for specification` as a supported alias.';
   }
 
   if (normalized.startsWith('ready for refinement') && normalized === 'ready for refinement') {
@@ -72,7 +77,7 @@ export function suggestCommand(text: string): string | null {
   }
 
   if (normalized.startsWith('ready')) {
-    return 'Unknown command. Supported commands are `ready for specification`, `ready for planning`, `ready for planning without questions`, `ready for implementation`, `ready for rework`, and `ready for refinement <instruction>`.';
+    return 'Unknown command. Supported commands are `ready for breakdown` (alias: `ready for specification`), `ready for planning`, `ready for planning without questions`, `ready for implementation`, `ready for rework`, and `ready for refinement <instruction>`.';
   }
 
   return null;

@@ -68,6 +68,10 @@ describe('BotController', () => {
       issue_number: 1,
       body: expect.stringContaining('configured to run **Codex** through OpenAI'),
     }));
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 1,
+      body: expect.stringContaining('ready for breakdown'),
+    }));
   });
 
   it('uses Codex for planning and updates the state label', async () => {
@@ -116,6 +120,29 @@ describe('BotController', () => {
       issue_number: 42,
       body: expect.stringContaining('Hello! I am your AI Developer Bot.'),
     }));
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 12,
+      body: expect.stringContaining('✅ **Breakdown completed.**'),
+    }));
+  });
+
+  it('accepts ready for breakdown as the child-spec command alias', async () => {
+    (CodexRunner as jest.Mock).mockImplementation(() => ({
+      generateEpicSplit: jest.fn().mockResolvedValue([
+        { title: 'Spec 1', specMarkdown: '# Feature: Spec 1' },
+      ]),
+    }));
+
+    await controller.handleCommand({
+      number: 12,
+      author: 'alice',
+      body: 'ready for breakdown',
+      labels: ['state:idle'],
+      isPR: false,
+    });
+
+    const runner = (CodexRunner as jest.Mock).mock.results.at(-1)?.value;
+    expect(runner.generateEpicSplit).toHaveBeenCalledWith('Test', 'Body', 'strong');
   });
 
   it('fails specification splitting instead of posting an empty success message', async () => {
@@ -147,6 +174,7 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
+      applyFileSystemChanges: jest.fn().mockResolvedValue(undefined),
       hasWorkingTreeChanges: jest.fn().mockResolvedValue(true),
       commitAndPush: jest.fn().mockResolvedValue(true),
     };
@@ -166,6 +194,10 @@ describe('BotController', () => {
     const runner = (CodexRunner as jest.Mock).mock.results.at(-1)?.value;
     expect(runner.implementFeature).toHaveBeenCalledWith('Test', 'Body', '**Implementation Plan**\n\n# Plan', 'strong');
     expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('codex/issue-7-test-lun2elv9');
+    expect(mockGit.applyFileSystemChanges).toHaveBeenCalledWith([
+      { path: 'specs/07-test.md', content: 'Body\n' },
+      { path: 'plans/07-test-plan.md', content: '# Plan\n' },
+    ]);
     expect(mockGit.commitAndPush).toHaveBeenCalledWith('Fix #7: Auto implementation', 'codex/issue-7-test-lun2elv9');
     expect(mockOctokit.rest.pulls.create).toHaveBeenCalledWith(expect.objectContaining({
       head: 'codex/issue-7-test-lun2elv9',
@@ -173,6 +205,10 @@ describe('BotController', () => {
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 7,
       body: expect.stringContaining('🤖 **Implementation started**'),
+    }));
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 7,
+      body: expect.stringContaining('**Persisted artifacts:**'),
     }));
   });
 
@@ -186,6 +222,7 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
+      applyFileSystemChanges: jest.fn().mockResolvedValue(undefined),
       hasWorkingTreeChanges: jest.fn().mockResolvedValue(true),
       commitAndPush: jest.fn().mockResolvedValue(true),
     };
@@ -259,6 +296,10 @@ describe('BotController', () => {
       'fast'
     );
     expect(mockGit.hasWorkingTreeChanges).toHaveBeenCalled();
+    expect(mockGit.applyFileSystemChanges).toHaveBeenCalledWith([
+      { path: 'specs/07-feature-title.md', content: 'Feature Spec\n' },
+      { path: 'plans/07-feature-title-plan.md', content: '# Plan\n' },
+    ]);
     expect(mockGit.commitAndPush).toHaveBeenCalledWith('PR Rework: address review feedback', 'existing-branch');
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 99,
@@ -276,6 +317,7 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
+      applyFileSystemChanges: jest.fn().mockResolvedValue(undefined),
       hasWorkingTreeChanges: jest.fn().mockResolvedValue(true),
       commitAndPush: jest.fn().mockResolvedValue(true),
     };
@@ -300,6 +342,10 @@ describe('BotController', () => {
       'strong'
     );
     expect(mockGit.hasWorkingTreeChanges).toHaveBeenCalled();
+    expect(mockGit.applyFileSystemChanges).toHaveBeenCalledWith([
+      { path: 'specs/07-feature-title.md', content: 'Feature Spec\n' },
+      { path: 'plans/07-feature-title-plan.md', content: '# Plan\n' },
+    ]);
     expect(mockGit.commitAndPush).toHaveBeenCalledWith('PR Refinement: apply requested polish', 'existing-branch');
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 99,
@@ -317,6 +363,7 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
+      applyFileSystemChanges: jest.fn().mockResolvedValue(undefined),
       hasWorkingTreeChanges: jest.fn().mockResolvedValue(false),
       commitAndPush: jest.fn().mockResolvedValue(false),
     };
@@ -362,6 +409,7 @@ describe('BotController', () => {
       issue_number: 99,
       body: expect.stringContaining('✅ Addressed feedback pushed'),
     }));
+    expect(mockGit.applyFileSystemChanges).not.toHaveBeenCalled();
     expect(mockGit.commitAndPush).not.toHaveBeenCalled();
   });
 

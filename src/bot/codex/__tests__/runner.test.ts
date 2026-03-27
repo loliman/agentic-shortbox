@@ -49,6 +49,7 @@ describe('CodexRunner', () => {
     expect(executeSpy.mock.calls[0][0]).toContain('Do not return an empty array.');
     expect(executeSpy.mock.calls[0][0]).toContain('The `tasks` array must contain 3 to 5 items.');
     expect(executeSpy.mock.calls[0][0]).toContain('Use this visible issue title pattern exactly: "Epic / Spec NN: <Short Child Scope>"');
+    expect(executeSpy.mock.calls[0][0]).toContain('ready to be stored under `specs/`');
     expect(executeSpy.mock.calls[0][0]).toContain('Return only valid JSON with no markdown fences and no commentary.');
   });
 
@@ -82,6 +83,7 @@ describe('CodexRunner', () => {
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_BASE_URL: https://adesso-ai-hub.3asabc.de/v1');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Resolved model: gpt-5-mini');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Resolved sandbox: workspace-write');
+    expect(executeSpy.mock.calls[0][0]).toContain('ready to be stored under `plans/`');
   });
 
   it('asks Codex to gather repository context itself for implementation', async () => {
