@@ -168,7 +168,8 @@ export class CodexRunner {
           changedFiles: { type: 'array', items: { type: 'string' } },
         },
       },
-      modelConf
+      modelConf,
+      false
     );
   }
 
@@ -205,7 +206,8 @@ export class CodexRunner {
           changedFiles: { type: 'array', items: { type: 'string' } },
         },
       },
-      modelConf
+      modelConf,
+      false
     );
   }
 
@@ -241,11 +243,17 @@ export class CodexRunner {
           changedFiles: { type: 'array', items: { type: 'string' } },
         },
       },
-      modelConf
+      modelConf,
+      false
     );
   }
 
-  private async runStructuredTask<T>(task: CodexTaskContext, schema: Record<string, unknown>, modelConf: string): Promise<T> {
+  private async runStructuredTask<T>(
+    task: CodexTaskContext,
+    schema: Record<string, unknown>,
+    modelConf: string,
+    useOutputSchema: boolean = true
+  ): Promise<T> {
     if (!process.env.OPENAI_API_KEY) {
       throw new MissingConfigurationError('Codex requires `OPENAI_API_KEY`, but no OpenAI API key is configured for this repository.');
     }
@@ -267,7 +275,7 @@ export class CodexRunner {
     core.info('[CodexRunner] Prompt end');
 
     try {
-      const turn = await this.executeStructuredTurn(prompt, schema, modelConf, codexEnv);
+      const turn = await this.executeStructuredTurn(prompt, useOutputSchema ? schema : undefined, modelConf, codexEnv);
       const raw = turn.finalResponse.trim();
       core.info(`[CodexRunner] Completed turn items: ${turn.items.length}`);
       this.logTurnItems(turn.items);
@@ -285,7 +293,7 @@ export class CodexRunner {
 
   protected async executeStructuredTurn(
     prompt: string,
-    schema: Record<string, unknown>,
+    schema: Record<string, unknown> | undefined,
     modelConf: string,
     codexEnv: NodeJS.ProcessEnv
   ): Promise<CodexSdkTurn> {
@@ -313,7 +321,7 @@ export class CodexRunner {
       modelReasoningEffort: 'medium',
     });
 
-    const turn = await thread.run(prompt, { outputSchema: schema });
+    const turn = schema ? await thread.run(prompt, { outputSchema: schema }) : await thread.run(prompt);
     return {
       finalResponse: turn.finalResponse,
       items: turn.items as Array<{ type: string; [key: string]: unknown }>,

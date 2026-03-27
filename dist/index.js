@@ -32714,7 +32714,7 @@ class CodexRunner {
                 summary: { type: 'string' },
                 changedFiles: { type: 'array', items: { type: 'string' } },
             },
-        }, modelConf);
+        }, modelConf, false);
     }
     async applyReviewRework(title, featureSpec, implementationPlan, feedback, modelConf = 'strong') {
         return this.runStructuredTask({
@@ -32746,7 +32746,7 @@ class CodexRunner {
                 summary: { type: 'string' },
                 changedFiles: { type: 'array', items: { type: 'string' } },
             },
-        }, modelConf);
+        }, modelConf, false);
     }
     async applyReviewRefinement(title, featureSpec, implementationPlan, instruction, modelConf = 'strong') {
         return this.runStructuredTask({
@@ -32777,9 +32777,9 @@ class CodexRunner {
                 summary: { type: 'string' },
                 changedFiles: { type: 'array', items: { type: 'string' } },
             },
-        }, modelConf);
+        }, modelConf, false);
     }
-    async runStructuredTask(task, schema, modelConf) {
+    async runStructuredTask(task, schema, modelConf, useOutputSchema = true) {
         if (!process.env.OPENAI_API_KEY) {
             throw new MissingConfigurationError('Codex requires `OPENAI_API_KEY`, but no OpenAI API key is configured for this repository.');
         }
@@ -32796,7 +32796,7 @@ class CodexRunner {
         core.info(prompt);
         core.info('[CodexRunner] Prompt end');
         try {
-            const turn = await this.executeStructuredTurn(prompt, schema, modelConf, codexEnv);
+            const turn = await this.executeStructuredTurn(prompt, useOutputSchema ? schema : undefined, modelConf, codexEnv);
             const raw = turn.finalResponse.trim();
             core.info(`[CodexRunner] Completed turn items: ${turn.items.length}`);
             this.logTurnItems(turn.items);
@@ -32832,7 +32832,7 @@ class CodexRunner {
             approvalPolicy: 'never',
             modelReasoningEffort: 'medium',
         });
-        const turn = await thread.run(prompt, { outputSchema: schema });
+        const turn = schema ? await thread.run(prompt, { outputSchema: schema }) : await thread.run(prompt);
         return {
             finalResponse: turn.finalResponse,
             items: turn.items,
