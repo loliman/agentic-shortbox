@@ -33656,7 +33656,12 @@ class BotController {
         if (operations.length === 0) {
             return [];
         }
-        return git.applyMissingFileSystemChanges(operations);
+        const gitWithOptionalMissingWriter = git;
+        if (typeof gitWithOptionalMissingWriter.applyMissingFileSystemChanges === 'function') {
+            return gitWithOptionalMissingWriter.applyMissingFileSystemChanges(operations);
+        }
+        await git.applyFileSystemChanges(operations);
+        return operations.map((operation) => operation.path);
     }
     buildContextArtifactOperations(issueNumber, issueTitle, spec, plan) {
         const baseName = this.buildArtifactBaseName(issueNumber, issueTitle);

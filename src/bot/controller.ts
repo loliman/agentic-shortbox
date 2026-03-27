@@ -643,7 +643,16 @@ export class BotController {
       return [];
     }
 
-    return git.applyMissingFileSystemChanges(operations);
+    const gitWithOptionalMissingWriter = git as GitManager & {
+      applyMissingFileSystemChanges?: (operations: { path: string; content: string }[]) => Promise<string[]>;
+    };
+
+    if (typeof gitWithOptionalMissingWriter.applyMissingFileSystemChanges === 'function') {
+      return gitWithOptionalMissingWriter.applyMissingFileSystemChanges(operations);
+    }
+
+    await git.applyFileSystemChanges(operations);
+    return operations.map((operation) => operation.path);
   }
 
   private buildContextArtifactOperations(issueNumber: number, issueTitle: string, spec: string, plan: string) {
