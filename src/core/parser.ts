@@ -1,5 +1,5 @@
 export interface ParsedCommand {
-  type: 'define' | 'plan' | 'implement' | 'rework';
+  type: 'define' | 'plan' | 'implement' | 'rework' | 'refinement';
   additionalText?: string;
 }
 
@@ -29,6 +29,11 @@ export function parseCommand(text: string): ParsedCommand | null {
 
   if (normalized === 'ready for rework') {
     return { type: 'rework' };
+  }
+
+  if (normalized.startsWith('ready for refinement')) {
+    const additionalText = text.slice(text.toLowerCase().indexOf('ready for refinement') + 'ready for refinement'.length).trim();
+    return { type: 'refinement', additionalText };
   }
 
   return null; // Ignore completely if no command is detected

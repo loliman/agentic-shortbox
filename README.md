@@ -18,6 +18,7 @@ Open an Issue. Comment a command. The bot does the rest.
 | `ready for planning!` | Forces a plan without hesitation |
 | `ready for implementation` | Writes code, commits to a branch, opens a PR |
 | `ready for rework` | On a PR: bot gathers review feedback and applies the requested rework |
+| `ready for refinement <instruction>` | On a PR: bot applies broader polish based on the inline instruction plus current PR context |
 
 ---
 
@@ -79,7 +80,9 @@ Apply labels to each issue before giving commands:
 
 That's it. Open an issue and the bot greets you.
 
-For Pull Requests, leave your review feedback first. Then either submit the review with the exact text `ready for rework` or add a normal PR comment with `ready for rework` once the feedback set is complete.
+For Pull Requests:
+- Use `ready for rework` after concrete review feedback is in place.
+- Use `ready for refinement <instruction>` when you want broader polish and put the full instruction in the same comment.
 
 ---
 

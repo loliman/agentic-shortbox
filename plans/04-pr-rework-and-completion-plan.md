@@ -2,6 +2,7 @@
 
 ## Summary
 To fully support the AI-first workflow lifecycle, we need to handle the post-implementation phases. This involves collecting review feedback from the Pull Request itself and then using a single `ready for rework` command to trigger a focused rework pass. Upon a successful merge by a human reviewer, the AI can later generate a final summary and automatically close the parent issue, explicitly transitioning the workflow state to `done`.
+For broader, non-line-bound follow-up, `ready for refinement <instruction>` should trigger a separate refinement pass using the inline instruction plus current PR context.
 
 ## Affected Files
 - `src/core/parser.ts`: Expose `ready for rework` to the PR domain.
@@ -24,6 +25,7 @@ To fully support the AI-first workflow lifecycle, we need to handle the post-imp
 - State loops during PR:
   - `implementing` (via AI PR Creation) ➔ `in-review`
   - `in-review` + `ready for rework` on the PR or in the submitted review text ➔ `reworking`
+  - `in-review` + `ready for refinement <instruction>` ➔ `reworking`
   - `reworking` (via AI PR update) ➔ `in-review`
   - `in-review` + (Human Merges) ➔ `done` (closes parent Issue).
 
@@ -48,6 +50,7 @@ To fully support the AI-first workflow lifecycle, we need to handle the post-imp
 
 ## Definition of Done
 - [ ] PR Action triggers on `ready for rework`.
+- [ ] PR Action triggers on `ready for refinement <instruction>`.
 - [ ] Merge Action triggers on PR Close/Merge.
 - [ ] Parent Issue is successfully closed automatically.
 - [ ] Strict isolation logic prevents autonomous rewrites of Human PRs.

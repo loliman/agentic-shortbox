@@ -20,6 +20,7 @@ GitHub Actions are both the trigger surface and the runtime host.
 
 ## PR Commands (Triggers)
 - `ready for rework` on the PR or as the submitted review text (Collects PR review feedback and applies the requested rework to the active PR branch)
+- `ready for refinement <instruction>` on the PR (Uses the inline instruction plus current PR context for broader polish)
 
 ## State Handling
 - Labels remain configuration until an explicit command comment is posted.
