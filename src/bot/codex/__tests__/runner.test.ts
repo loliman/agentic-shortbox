@@ -76,6 +76,8 @@ describe('CodexRunner', () => {
     expect(core.info).toHaveBeenCalledWith(expect.stringContaining('Command: ready for planning'));
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Prompt end');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Structured output source: output-last-message');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_API_KEY length: 8');
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: no');
   });
 
   it('asks Codex to gather repository context itself for implementation', async () => {
@@ -226,6 +228,26 @@ describe('CodexRunner', () => {
     );
     expect(fs.mkdirSync).toHaveBeenCalledWith('/tmp', { recursive: true });
     expect(fs.mkdirSync).toHaveBeenCalledWith('/home/tester/.codex', { recursive: true });
+  });
+
+  it('trims the OpenAI API key before passing it to Codex', async () => {
+    process.env = { OPENAI_API_KEY: '  sk-test-key  ', PATH: '/usr/bin' } as NodeJS.ProcessEnv;
+    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
+    (fs.readFileSync as jest.Mock).mockReturnValue('{"action":"plan","content":"# Plan"}');
+
+    const runner = new CodexRunner();
+    await runner.generateImplementationPlan('Feature', 'Body', false, 'fast');
+
+    expect(spawnSync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({
+        env: expect.objectContaining({
+          OPENAI_API_KEY: 'sk-test-key',
+        }),
+      })
+    );
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: yes');
   });
 
   it('fails clearly when Codex does not write the output-last-message file', async () => {

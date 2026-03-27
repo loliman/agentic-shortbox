@@ -32771,6 +32771,8 @@ class CodexRunner {
         const outputPath = path_1.default.join(tempDir, 'output.json');
         core.info(`[CodexRunner] Launching Codex CLI via ${codexCommand.executable}`);
         core.info(`[CodexRunner] OPENAI_API_KEY present: ${codexEnv.OPENAI_API_KEY ? 'yes' : 'no'}`);
+        core.info(`[CodexRunner] OPENAI_API_KEY length: ${codexEnv.OPENAI_API_KEY?.length ?? 0}`);
+        core.info(`[CodexRunner] OPENAI_API_KEY prefix looks like OpenAI key: ${codexEnv.OPENAI_API_KEY?.startsWith('sk-') ? 'yes' : 'no'}`);
         core.info('[CodexRunner] Prompt begin');
         core.info(prompt);
         core.info('[CodexRunner] Prompt end');
@@ -33067,6 +33069,7 @@ class CodexRunner {
         const homeDir = process.env.HOME || os_1.default.homedir();
         const tempDir = process.env.TMPDIR || process.env.TMP || process.env.TEMP || os_1.default.tmpdir();
         const codexHome = process.env.CODEX_HOME || path_1.default.join(homeDir, '.codex');
+        const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
         fs_1.default.mkdirSync(tempDir, { recursive: true });
         fs_1.default.mkdirSync(codexHome, { recursive: true });
         const env = {
@@ -33075,7 +33078,7 @@ class CodexRunner {
             TMPDIR: process.env.TMPDIR || tempDir,
             TMP: process.env.TMP || tempDir,
             TEMP: process.env.TEMP || tempDir,
-            OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+            OPENAI_API_KEY: openAiApiKey,
             OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
             OPENAI_ORG_ID: process.env.OPENAI_ORG_ID,
             OPENAI_PROJECT: process.env.OPENAI_PROJECT,
