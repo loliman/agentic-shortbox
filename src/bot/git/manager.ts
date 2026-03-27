@@ -30,6 +30,25 @@ export class GitManager {
     }
   }
 
+  async applyMissingFileSystemChanges(operations: { path: string, content: string }[]): Promise<string[]> {
+    const createdPaths: string[] = [];
+
+    for (const op of operations) {
+      const fullPath = path.resolve(this.workspace, op.path);
+      if (fs.existsSync(fullPath)) {
+        core.info(`[GitManager] Keeping existing file unchanged: ${op.path}`);
+        continue;
+      }
+
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      fs.writeFileSync(fullPath, op.content, 'utf8');
+      createdPaths.push(op.path);
+      core.info(`[GitManager] Wrote missing artifact to: ${op.path}`);
+    }
+
+    return createdPaths;
+  }
+
   async checkoutNewBranch(branchName: string): Promise<void> {
     core.info(`[GitManager] Checking out branch: ${branchName} in ${this.workspace}`);
     
