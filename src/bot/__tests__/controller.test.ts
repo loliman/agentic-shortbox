@@ -44,7 +44,16 @@ describe('BotController', () => {
           listReviews: jest.fn().mockResolvedValue({ data: [] }),
           listFiles: jest.fn().mockResolvedValue({ data: [] }),
         }
-      }
+      },
+      graphql: jest.fn().mockResolvedValue({
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              nodes: []
+            }
+          }
+        }
+      })
     };
 
     controller = new BotController(mockOctokit, mockCtx);
@@ -263,11 +272,47 @@ describe('BotController', () => {
 
       mockOctokit.rest.pulls.get.mockResolvedValueOnce({ data: { head: { ref: 'existing-branch' } } });
       mockOctokit.rest.pulls.get.mockResolvedValueOnce({ data: 'diff --git a/foo.ts b/foo.ts' });
-      mockOctokit.rest.pulls.listReviewComments.mockResolvedValueOnce({
-        data: [{ user: { type: 'User' }, path: 'src/foo.ts', line: 12, body: 'Please simplify this message.', diff_hunk: '@@ -12 +12 @@' }]
-      });
-      mockOctokit.rest.pulls.listReviews.mockResolvedValueOnce({
-        data: [{ user: { type: 'User' }, state: 'CHANGES_REQUESTED', body: 'Please revise the wording.' }]
+      mockOctokit.graphql.mockResolvedValueOnce({
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              nodes: [
+                {
+                  isResolved: false,
+                  isOutdated: false,
+                  comments: {
+                    nodes: [
+                      {
+                        body: 'Please simplify this message.',
+                        path: 'src/foo.ts',
+                        line: 12,
+                        originalLine: 12,
+                        diffHunk: '@@ -12 +12 @@',
+                        author: { login: 'bob' }
+                      }
+                    ]
+                  }
+                },
+                {
+                  isResolved: true,
+                  isOutdated: false,
+                  comments: {
+                    nodes: [
+                      {
+                        body: 'Old resolved comment.',
+                        path: 'src/old.ts',
+                        line: 5,
+                        originalLine: 5,
+                        diffHunk: '@@ -5 +5 @@',
+                        author: { login: 'alice' }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
       });
       mockOctokit.rest.pulls.listFiles.mockResolvedValueOnce({
         data: [{ filename: 'src/foo.ts', patch: '@@ -1 +1 @@' }]
@@ -287,6 +332,16 @@ describe('BotController', () => {
         expect.stringContaining('Prefer the exact files and lines referenced'),
         expect.stringContaining('1: const message = "hello";')
       );
+      expect(mockClient.generateCode).toHaveBeenCalledWith(
+        'PR Rework for #99',
+        expect.any(String),
+        expect.not.stringContaining('Old resolved comment.')
+      );
+      expect(mockClient.generateCode).toHaveBeenCalledWith(
+        'PR Rework for #99',
+        expect.any(String),
+        expect.stringContaining('Please simplify this message.')
+      );
       expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('existing-branch');
       expect(mockGit.commitAndPush).toHaveBeenCalledWith('PR Rework: address review feedback', 'existing-branch');
       expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
@@ -297,6 +352,54 @@ describe('BotController', () => {
         issue_number: 99,
         body: expect.stringContaining('`foo.ts`')
       }));
+    });
+
+    it('fails when no open review threads or discussion feedback remain', async () => {
+      const mockGit = {
+        checkoutNewBranch: jest.fn(),
+        applyFileSystemChanges: jest.fn(),
+        commitAndPush: jest.fn()
+      };
+      (GitManager as jest.Mock).mockImplementation(() => mockGit);
+      (LLMClient as jest.Mock).mockImplementation(() => ({
+        generateCode: jest.fn()
+      }));
+
+      mockOctokit.rest.pulls.get.mockResolvedValueOnce({ data: { head: { ref: 'existing-branch' } } });
+      mockOctokit.graphql.mockResolvedValueOnce({
+        repository: {
+          pullRequest: {
+            reviewThreads: {
+              nodes: [
+                {
+                  isResolved: true,
+                  isOutdated: false,
+                  comments: {
+                    nodes: [
+                      {
+                        body: 'Already handled',
+                        path: 'src/foo.ts',
+                        line: 1,
+                        originalLine: 1,
+                        diffHunk: '@@ -1 +1 @@',
+                        author: { login: 'bob' }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      });
+      mockOctokit.rest.issues.listComments.mockResolvedValueOnce({
+        data: [{ user: { type: 'User', login: 'bob' }, body: 'ready for rework' }]
+      });
+      mockOctokit.rest.pulls.listFiles.mockResolvedValueOnce({ data: [] });
+      mockOctokit.rest.pulls.get.mockResolvedValueOnce({ data: '' });
+
+      const payload = { number: 99, author: 'bob', body: 'ready for rework', labels: [], isPR: true };
+      await expect(controller.handleCommand(payload)).rejects.toThrow('No open PR feedback was found');
     });
   });
 });
