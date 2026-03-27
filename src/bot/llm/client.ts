@@ -16,10 +16,13 @@ export class LLMClient {
 
   constructor() {
     if (process.env.OPENAI_API_KEY) {
-       this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      this.openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+        baseURL: "https://adesso-ai-hub.3asabc.de/v1"
+      });
     }
     if (process.env.GEMINI_API_KEY) {
-       this.gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      this.gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     }
   }
 
@@ -47,7 +50,7 @@ export class LLMClient {
     loadSafely('README.md');
     loadSafely('AGENTS.md');
     loadSafely('AI_FIRST_AGENT_SPEC.md');
-    
+
     // In a mature setup, we could glob all markdown files in /docs, /specs. 
     // Here we include template files forcefully to ensure formats are respected:
     loadSafely('specs/templates/feature-spec.md');
