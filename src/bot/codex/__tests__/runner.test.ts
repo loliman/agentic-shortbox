@@ -157,4 +157,24 @@ describe('CodexRunner', () => {
       content: '# Plan',
     });
   });
+
+  it('rejects empty arrays for epic split results', async () => {
+    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
+    (fs.readFileSync as jest.Mock).mockReturnValue('[]');
+
+    const runner = new CodexRunner();
+    await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
+      'Codex returned an empty result array.'
+    );
+  });
+
+  it('rejects empty required strings in array items', async () => {
+    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
+    (fs.readFileSync as jest.Mock).mockReturnValue('[{"title":"","specMarkdown":"# Feature: Spec 1"}]');
+
+    const runner = new CodexRunner();
+    await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
+      'Codex returned an invalid array item: `title` must be a non-empty string.'
+    );
+  });
 });

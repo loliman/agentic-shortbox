@@ -114,6 +114,25 @@ describe('BotController', () => {
     expect(mockOctokit.rest.issues.create).toHaveBeenCalledTimes(2);
   });
 
+  it('fails specification splitting instead of posting an empty success message', async () => {
+    (CodexRunner as jest.Mock).mockImplementation(() => ({
+      generateEpicSplit: jest.fn().mockResolvedValue([]),
+    }));
+
+    await expect(controller.handleCommand({
+      number: 12,
+      author: 'alice',
+      body: 'ready for specification',
+      labels: ['state:idle'],
+      isPR: false,
+    })).rejects.toThrow('Codex returned no child specifications.');
+
+    expect(mockOctokit.rest.issues.create).not.toHaveBeenCalled();
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.stringContaining('Codex returned no child specifications'),
+    }));
+  });
+
   it('uses Codex for implementation and then opens a PR', async () => {
     (CodexRunner as jest.Mock).mockImplementation(() => ({
       implementFeature: jest.fn().mockResolvedValue({

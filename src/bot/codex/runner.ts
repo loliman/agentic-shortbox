@@ -339,7 +339,7 @@ export class CodexRunner {
   ): T {
     const directCandidate = this.extractJsonCandidate(raw, schema);
     if (directCandidate) {
-      return JSON.parse(directCandidate) as T;
+      return this.validateStructuredOutput<T>(JSON.parse(directCandidate), schema);
     }
 
     const fallbackCandidate = this.extractJsonCandidate(
@@ -350,7 +350,7 @@ export class CodexRunner {
     );
 
     if (fallbackCandidate) {
-      return JSON.parse(fallbackCandidate) as T;
+      return this.validateStructuredOutput<T>(JSON.parse(fallbackCandidate), schema);
     }
 
     const schemaSummary = JSON.stringify(schema, null, 2);
@@ -466,6 +466,66 @@ export class CodexRunner {
     }
 
     return candidates;
+  }
+
+  private validateStructuredOutput<T>(value: unknown, schema: Record<string, unknown>): T {
+    if (schema.type === 'array') {
+      if (!Array.isArray(value)) {
+        throw new Error('Codex returned JSON, but it was not the expected array result.');
+      }
+
+      if (value.length === 0) {
+        throw new Error('Codex returned an empty result array. Refusing to treat that as a successful structured response.');
+      }
+
+      const itemSchema = this.asRecord(schema.items);
+      const required = Array.isArray(itemSchema?.required) ? itemSchema.required : [];
+
+      for (const item of value) {
+        if (!this.isRecord(item)) {
+          throw new Error('Codex returned an array item that is not an object.');
+        }
+
+        for (const key of required) {
+          const field = item[key];
+          if (typeof field !== 'string' || field.trim().length === 0) {
+            throw new Error(`Codex returned an invalid array item: \`${key}\` must be a non-empty string.`);
+          }
+        }
+      }
+
+      return value as T;
+    }
+
+    if (schema.type === 'object') {
+      if (!this.isRecord(value)) {
+        throw new Error('Codex returned JSON, but it was not the expected object result.');
+      }
+
+      const required = Array.isArray(schema.required) ? schema.required : [];
+      for (const key of required) {
+        const field = value[key];
+        if (field === undefined || field === null) {
+          throw new Error(`Codex returned an invalid object result: missing required field \`${key}\`.`);
+        }
+
+        if (typeof field === 'string' && field.trim().length === 0) {
+          throw new Error(`Codex returned an invalid object result: \`${key}\` must not be empty.`);
+        }
+      }
+
+      return value as T;
+    }
+
+    return value as T;
+  }
+
+  private isRecord(value: unknown): value is Record<string, any> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private asRecord(value: unknown): Record<string, any> | null {
+    return this.isRecord(value) ? value : null;
   }
 
   private buildCodexEnv(): NodeJS.ProcessEnv {

@@ -169,6 +169,9 @@ export class BotController {
     
     const agent = new CodexRunner();
     const tasks = await agent.generateEpicSplit(issueData.data.title, issueData.data.body, config.model);
+    if (tasks.length === 0) {
+      throw new Error('Codex returned no child specifications. Aborting instead of posting an empty success message.');
+    }
     
     // Create sub issues 
     const links = [];
