@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: christian-riese/agentic-shortbox@v6.0.0
+      - uses: christian-riese/agentic-shortbox@v6.1.0
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
