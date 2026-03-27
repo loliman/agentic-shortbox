@@ -36,23 +36,24 @@ export class BotController {
     let message = '';
 
     if (availableModels.length === 0) {
-       message = `👋 **Hello! I am your AI Developer Bot.**
-       
-⚠️ **I am currently offline.** No API secrets (\`OPENAI_API_KEY\` or \`GEMINI_API_KEY\`) were found in this repository.
-Please configure the secrets in your GitHub Settings so I can assist you with your issues!`;
+       message = [
+         '👋 **Hello! I am your AI Developer Bot.**',
+         '⚠️ **I am currently offline.** No API secrets (`OPENAI_API_KEY` or `GEMINI_API_KEY`) were found in this repository.',
+         'Please configure the secrets in your GitHub Settings so I can assist you with your issues!',
+       ].join('\n\n');
     } else {
-       message = `👋 **Hello! I am your AI Developer Bot.**
-    
-I have detected the following LLM configurations are available for this repository:
-${availableModels.join('\n')}
-
-**How to use me:**
-1. Apply the configuration labels you want to this issue (e.g., \`agent:codex\` and \`model:fast\`).
-2. Type \`ready for planning\` in a comment, and I will draft a technical plan based on your issue description.
-3. Type \`ready for implementation\` to let me write the code and spawn a Pull Request!
-4. Type \`ready for specification\` to let me split this Epic into sub-issues.
-
-I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!`;
+       message = [
+         '👋 **Hello! I am your AI Developer Bot.**',
+         `I have detected the following LLM configurations are available for this repository:\n${availableModels.join('\n')}`,
+         [
+           '**How to use me:**',
+           '1. Apply the configuration labels you want to this issue (e.g., `agent:codex` and `model:fast`).',
+           '2. Type `ready for planning` in a comment, and I will draft a technical plan based on your issue description.',
+           '3. Type `ready for implementation` to let me write the code and open a Pull Request.',
+           '4. Type `ready for specification` to let me split this epic into sub-issues.',
+         ].join('\n'),
+         'I strictly follow your repository\'s `AGENTS.md` and `docs/` when responding.',
+       ].join('\n\n');
     }
 
     await this.octokit.rest.issues.createComment({
@@ -139,7 +140,14 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
        links.push(`#${created.data.number} - ${spec.title}`);
     }
 
-    await this.postStatus(payload.number, `✅ Epic split completed! Here are your generated child tasks:\n\n${links.map(l => `- [ ] ${l}`).join('\n')}`);
+    await this.postStatus(
+      payload.number,
+      [
+        '✅ **Epic split completed.**',
+        'Here are your generated child tasks:',
+        links.map(l => `- [ ] ${l}`).join('\n'),
+      ].join('\n\n')
+    );
   }
 
   // 4. PLANNING
@@ -151,10 +159,10 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
     const result = await agent.generateImplementationPlan(issueData.data.title, issueData.data.body, force);
 
     if (result.action === 'question') {
-      await this.postStatus(payload.number, `**Clarification Needed**\n\n${result.content}`);
+      await this.postStatus(payload.number, ['**Clarification Needed**', result.content].join('\n\n'));
       await this.replaceStateLabel(payload.number, payload.labels, 'state:clarification_needed');
     } else {
-      await this.postStatus(payload.number, `**Implementation Plan**\n\n${result.content}`);
+      await this.postStatus(payload.number, ['**Implementation Plan**', result.content].join('\n\n'));
       await this.replaceStateLabel(payload.number, payload.labels, 'state:planned');
     }
   }
@@ -186,13 +194,23 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
     const pr = await this.octokit.rest.pulls.create({
       ...this.ctx,
       title: `AI Implementation for #${payload.number}`,
-      body: `This Pull Request implements auto-generated code for Issue #${payload.number}.\n\nReviewer: @${payload.author}\n\nLeave review feedback on the PR and then comment \`ready for rework\` when you want me to apply it.`,
+      body: [
+        `This Pull Request implements auto-generated code for Issue #${payload.number}.`,
+        `Reviewer: @${payload.author}`,
+        'Leave review feedback on the PR and then comment `ready for rework` when you want me to apply it.',
+      ].join('\n\n'),
       head: branchName,
       base: 'main'
     });
 
     await this.postStatus(pr.data.number, this.buildPullRequestWelcomeMessage(payload.number, payload.author));
-    await this.postStatus(payload.number, `✅ Code generated and pushed to PR #${pr.data.number}!\nGo review it!`);
+    await this.postStatus(
+      payload.number,
+      [
+        `✅ **Code generated and pushed to PR #${pr.data.number}.**`,
+        'Go review it!',
+      ].join('\n\n')
+    );
     await this.replaceStateLabel(payload.number, payload.labels, 'state:in-review');
   }
 
@@ -320,19 +338,18 @@ I strictly follow your repository's \`AGENTS.md\` and \`docs/\` when responding!
   }
 
   private buildPullRequestWelcomeMessage(issueNumber: number, author: string) {
-    return `👋 **AI Review Helper**
-
-This Pull Request was created for Issue #${issueNumber}.
-
-**Review flow here:**
-1. Leave inline review comments or general PR feedback.
-2. Comment \`ready for rework\` on the PR when the feedback is complete.
-3. I will collect the review feedback, changed files, and diff, then apply only that rework.
-
-**Example:**
-\`ready for rework\`
-
-Reviewer: @${author}`;
+    return [
+      '👋 **AI Review Helper**',
+      `This Pull Request was created for Issue #${issueNumber}.`,
+      [
+        '**Review flow here:**',
+        '1. Leave inline review comments or general PR feedback.',
+        '2. Comment `ready for rework` on the PR when the feedback is complete.',
+        '3. I will collect the review feedback, changed files, and diff, then apply only that rework.',
+      ].join('\n'),
+      ['**Example:**', '`ready for rework`'].join('\n'),
+      `Reviewer: @${author}`,
+    ].join('\n\n');
   }
 
   private buildImplementationBranchName(issueNumber: number, issueTitle: string) {
