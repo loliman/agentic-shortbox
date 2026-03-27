@@ -19,6 +19,7 @@ describe('BotController', () => {
       rest: {
         issues: {
           createComment: jest.fn().mockResolvedValue({}),
+          updateComment: jest.fn().mockResolvedValue({}),
           addLabels: jest.fn().mockResolvedValue({}),
           removeLabel: jest.fn().mockResolvedValue({}),
           get: jest.fn().mockResolvedValue({ data: { title: 'Test', body: 'Body' } }),
@@ -435,6 +436,48 @@ describe('BotController', () => {
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 15,
       body: expect.stringContaining('ready for planning without questions'),
+    }));
+  });
+
+  it('creates artifact index comment on rework when marker is missing', async () => {
+    (CodexRunner as jest.Mock).mockImplementation(() => ({
+      applyReviewRework: jest.fn().mockResolvedValue({
+        summary: 'Addressed feedback.',
+        changedFiles: ['src/foo.ts'],
+      }),
+    }));
+
+    const mockGit = {
+      checkoutNewBranch: jest.fn(),
+      applyFileSystemChanges: jest.fn().mockResolvedValue(undefined),
+      hasWorkingTreeChanges: jest.fn().mockResolvedValue(true),
+      commitAndPush: jest.fn().mockResolvedValue(true),
+    };
+    (GitManager as jest.Mock).mockImplementation(() => mockGit);
+    mockOctokit.graphql.mockResolvedValueOnce({
+      repository: {
+        pullRequest: {
+          reviewThreads: {
+            nodes: [{
+              isResolved: false,
+              isOutdated: false,
+              comments: { nodes: [{ body: 'Fix this.', path: 'src/foo.ts', line: 2, originalLine: 2, diffHunk: '@@', author: { login: 'bob' } }] },
+            }],
+          },
+        },
+      },
+    });
+    mockOctokit.rest.issues.get.mockResolvedValueOnce({ data: { title: 'Feature', body: 'Spec' } });
+    mockOctokit.rest.issues.listComments
+      .mockResolvedValueOnce({ data: [{ body: '**Implementation Plan**\n\n# Plan' }] })
+      .mockResolvedValueOnce({ data: [{ id: 1, body: 'human note', user: { type: 'User' } }] });
+
+    await controller.handleCommand({ number: 99, author: 'bob', body: 'ready for rework', labels: ['state:in-review'], isPR: true });
+
+    expect(mockOctokit.rest.issues.updateComment).not.toHaveBeenCalled();
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 99,
+      body: expect.stringContaining('<!-- ai-artifact-index:bot -->'),
     }));
   });
 });
