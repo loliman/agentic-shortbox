@@ -132,4 +132,29 @@ describe('CodexRunner', () => {
       'Codex returned a non-JSON final message.'
     );
   });
+
+  it('falls back to JSON found in stdout when the final message file is empty', async () => {
+    (spawnSync as jest.Mock).mockReturnValue({
+      status: 0,
+      stdout: 'Some logs before\n[{"title":"Spec 1","specMarkdown":"# Feature: Spec 1"}]\n',
+      stderr: '',
+    });
+    (fs.readFileSync as jest.Mock).mockReturnValue('');
+
+    const runner = new CodexRunner();
+    await expect(runner.generateEpicSplit('Epic', 'Spec')).resolves.toEqual([
+      { title: 'Spec 1', specMarkdown: '# Feature: Spec 1' },
+    ]);
+  });
+
+  it('extracts JSON from fenced output when present', async () => {
+    (spawnSync as jest.Mock).mockReturnValue({ status: 0, stdout: '', stderr: '' });
+    (fs.readFileSync as jest.Mock).mockReturnValue('```json\n{"action":"plan","content":"# Plan"}\n```');
+
+    const runner = new CodexRunner();
+    await expect(runner.generateImplementationPlan('Feature', 'Body', false, 'fast')).resolves.toEqual({
+      action: 'plan',
+      content: '# Plan',
+    });
+  });
 });

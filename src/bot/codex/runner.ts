@@ -258,7 +258,7 @@ export class CodexRunner {
       }
 
       const raw = fs.readFileSync(outputPath, 'utf8').trim();
-      return this.parseStructuredOutput<T>(raw, schema);
+      return this.parseStructuredOutput<T>(raw, schema, result.stdout, result.stderr);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
@@ -331,21 +331,141 @@ export class CodexRunner {
     return tail || 'Codex execution failed.';
   }
 
-  private parseStructuredOutput<T>(raw: string, schema: Record<string, unknown>): T {
-    try {
-      return JSON.parse(raw) as T;
-    } catch {
-      const schemaSummary = JSON.stringify(schema, null, 2);
-      throw new Error(
-        [
-          'Codex returned a non-JSON final message.',
-          'Expected the final message to be valid JSON matching this schema:',
-          schemaSummary,
-          'Actual final message:',
-          raw,
-        ].join('\n')
-      );
+  private parseStructuredOutput<T>(
+    raw: string,
+    schema: Record<string, unknown>,
+    stdout?: string | null,
+    stderr?: string | null
+  ): T {
+    const directCandidate = this.extractJsonCandidate(raw, schema);
+    if (directCandidate) {
+      return JSON.parse(directCandidate) as T;
     }
+
+    const fallbackCandidate = this.extractJsonCandidate(
+      [stdout, stderr]
+        .filter((chunk): chunk is string => typeof chunk === 'string' && chunk.trim().length > 0)
+        .join('\n'),
+      schema
+    );
+
+    if (fallbackCandidate) {
+      return JSON.parse(fallbackCandidate) as T;
+    }
+
+    const schemaSummary = JSON.stringify(schema, null, 2);
+    throw new Error(
+      [
+        'Codex returned a non-JSON final message.',
+        'Expected the final message to be valid JSON matching this schema:',
+        schemaSummary,
+        'Actual final message:',
+        raw,
+      ].join('\n')
+    );
+  }
+
+  private extractJsonCandidate(content?: string | null, schema?: Record<string, unknown>): string | null {
+    if (!content) {
+      return null;
+    }
+
+    const trimmed = content.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    try {
+      JSON.parse(trimmed);
+      return trimmed;
+    } catch {
+      const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      if (fencedMatch?.[1]) {
+        const fenced = fencedMatch[1].trim();
+        try {
+          JSON.parse(fenced);
+          return fenced;
+        } catch {
+          // Keep searching.
+        }
+      }
+
+      const preferredStarter = schema?.type === 'array' ? '[' : schema?.type === 'object' ? '{' : null;
+      const candidates = this.collectBalancedJsonCandidates(trimmed).sort((left, right) => {
+        const leftPreferred = preferredStarter !== null && left.startsWith(preferredStarter) ? 1 : 0;
+        const rightPreferred = preferredStarter !== null && right.startsWith(preferredStarter) ? 1 : 0;
+        return rightPreferred - leftPreferred || right.length - left.length;
+      });
+
+      for (const candidate of candidates) {
+        try {
+          JSON.parse(candidate);
+          return candidate;
+        } catch {
+          // Try the next candidate.
+        }
+      }
+
+      return null;
+    }
+  }
+
+  private collectBalancedJsonCandidates(content: string): string[] {
+    const candidates: string[] = [];
+
+    for (let start = 0; start < content.length; start += 1) {
+      const opener = content[start];
+      if (opener !== '{' && opener !== '[') {
+        continue;
+      }
+
+      const stack = [opener];
+      let inString = false;
+      let escaped = false;
+
+      for (let end = start + 1; end < content.length; end += 1) {
+        const char = content[end];
+
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+
+        if (char === '\\') {
+          escaped = true;
+          continue;
+        }
+
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+
+        if (inString) {
+          continue;
+        }
+
+        if (char === '{' || char === '[') {
+          stack.push(char);
+          continue;
+        }
+
+        if (char === '}' || char === ']') {
+          const last = stack.at(-1);
+          if ((char === '}' && last === '{') || (char === ']' && last === '[')) {
+            stack.pop();
+            if (stack.length === 0) {
+              candidates.push(content.slice(start, end + 1));
+              break;
+            }
+          } else {
+            break;
+          }
+        }
+      }
+    }
+
+    return candidates;
   }
 
   private buildCodexEnv(): NodeJS.ProcessEnv {
