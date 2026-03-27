@@ -289,6 +289,14 @@ describe('BotController', () => {
       );
       expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('existing-branch');
       expect(mockGit.commitAndPush).toHaveBeenCalledWith('PR Rework: address review feedback', 'existing-branch');
+      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+        issue_number: 99,
+        body: expect.stringContaining('🛠️ **Rework applied**')
+      }));
+      expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+        issue_number: 99,
+        body: expect.stringContaining('`foo.ts`')
+      }));
     });
   });
 });
