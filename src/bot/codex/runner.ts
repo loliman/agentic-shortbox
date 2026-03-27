@@ -223,6 +223,9 @@ export class CodexRunner {
 
     core.info(`[CodexRunner] Launching Codex CLI via ${codexCommand.executable}`);
     core.info(`[CodexRunner] OPENAI_API_KEY present: ${codexEnv.OPENAI_API_KEY ? 'yes' : 'no'}`);
+    core.info('[CodexRunner] Prompt begin');
+    core.info(prompt);
+    core.info('[CodexRunner] Prompt end');
 
     const result = spawnSync(
       codexCommand.executable,

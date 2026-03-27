@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
+import * as core from '@actions/core';
 import { CodexRunner, MissingConfigurationError } from '../runner';
 
 jest.mock('fs');
@@ -55,6 +56,9 @@ describe('CodexRunner', () => {
         input: expect.stringContaining('You must read and obey `AGENTS.md`'),
       })
     );
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Prompt begin');
+    expect(core.info).toHaveBeenCalledWith(expect.stringContaining('Command: ready for planning'));
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Prompt end');
   });
 
   it('asks Codex to gather repository context itself for implementation', async () => {
