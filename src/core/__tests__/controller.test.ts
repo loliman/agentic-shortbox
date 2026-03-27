@@ -16,7 +16,7 @@ describe("Test the Controller Error Messages", () => {
     mockController = new MockController();
   });
 
-  it("should throw the correct error message when a specific string is provided", () => {
+  it("am i really real", () => {
     const errorMessage = "test error message A";
 
     expect(() => {
