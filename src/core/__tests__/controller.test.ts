@@ -11,14 +11,14 @@ class MockController extends Controller {
   }
 }
 
-describe("TEST THE CONTROLLER ERROR MESSAGES", () => {
+describe("Test the Controller Error Messages", () => {
   let mockController: MockController;
 
   beforeEach(() => {
     mockController = new MockController();
   });
 
-  it("should throw the correct error message", () => {
+  it("SHOULD THROW THE CORRECT ERROR MESSAGE", () => {
     const errorMessage = "Test Error Message";
 
     expect(() => {
