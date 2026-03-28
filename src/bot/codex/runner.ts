@@ -184,6 +184,9 @@ export class CodexRunner {
           'Apply only the open review feedback listed below.',
           'Resolve the requested changes in the local repository.',
           'If the review feedback targets persisted repository artifacts under `plans/` or `specs/`, those files are explicitly in scope for this run and should be edited directly.',
+          'Do not summarize the branch, the PR, or the planned work.',
+          'Do not restate the existing implementation, spec, or plan unless needed for the exact edit.',
+          'Make the requested file edits directly in the workspace.',
           'Do not ask clarifying questions.',
           'If the feedback is insufficient or ambiguous, fail instead of asking follow-up questions.',
           'Do not make unrelated edits.',
@@ -194,7 +197,7 @@ export class CodexRunner {
         outputContract: [
           'Return a JSON object with:',
           '- `summary`: short summary of the review changes you applied',
-          '- `changedFiles`: array of relative file paths you changed',
+          '- `changedFiles`: array of relative file paths you actually changed during this run',
         ].join('\n'),
       },
       {
@@ -222,6 +225,9 @@ export class CodexRunner {
           'Apply the following refinement request in the local repository.',
           'You must inspect the repository yourself and make only the changes needed for this refinement.',
           'If the refinement instruction targets persisted repository artifacts under `plans/` or `specs/`, those files are explicitly in scope for this run and should be edited directly.',
+          'Do not summarize the branch, the PR, or the planned work.',
+          'Do not restate the existing implementation, spec, or plan unless needed for the exact edit.',
+          'Make the requested file edits directly in the workspace.',
           'Do not ask clarifying questions.',
           'If the refinement instruction is insufficient or ambiguous, fail instead of asking follow-up questions.',
           '',
@@ -231,7 +237,7 @@ export class CodexRunner {
         outputContract: [
           'Return a JSON object with:',
           '- `summary`: short summary of the refinement you applied',
-          '- `changedFiles`: array of relative file paths you changed',
+          '- `changedFiles`: array of relative file paths you actually changed during this run',
         ].join('\n'),
       },
       {
