@@ -353,7 +353,7 @@ export class BotController {
      if (!pushed) {
        throw new Error('Codex did not produce any committed file changes for this rework. Aborting instead of claiming success.');
      }
-    await this.thisIsaNiceMethod(
+    await this.upsertArtifactIndexComment(
        payload.number,
        this.buildEditSummaryComment('🛠️ **Rework applied**', result.summary, result.changedFiles)
      );
@@ -400,7 +400,7 @@ export class BotController {
      if (!pushed) {
        throw new Error('Codex did not produce any committed file changes for this refinement. Aborting instead of claiming success.');
      }
-    await this.thisIsaNiceMethod(
+    await this.upsertArtifactIndexComment(
        payload.number,
        this.buildEditSummaryComment('✨ **Refinement applied**', result.summary, result.changedFiles, refinementInstruction)
      );
@@ -471,7 +471,7 @@ export class BotController {
     ].filter((section): section is string => Boolean(section)).join('\n\n');
   }
 
-  private async thisIsaNiceMethod(issueNumber: number, body: string) {
+  private async upsertArtifactIndexComment(issueNumber: number, body: string) {
     const comments = await this.octokit.rest.issues.listComments({
       ...this.ctx,
       issue_number: issueNumber,
