@@ -116,9 +116,15 @@ describe('CodexRunner', () => {
     await runner.applyReviewRefinement('Feature', 'Spec body', '# Plan', 'make the message warmer', 'fast');
 
     expect(executeSpy.mock.calls[0][0]).toContain('If the review feedback targets persisted repository artifacts under `plans/` or `specs/`, those files are explicitly in scope for this run and should be edited directly.');
+    expect(executeSpy.mock.calls[0][0]).toContain('Do not summarize the branch, the PR, or the planned work.');
+    expect(executeSpy.mock.calls[0][0]).toContain('Make the requested file edits directly in the workspace.');
+    expect(executeSpy.mock.calls[0][0]).toContain('array of relative file paths you actually changed during this run');
     expect(executeSpy.mock.calls[0][0]).toContain('Do not ask clarifying questions.');
     expect(executeSpy.mock.calls[0][0]).toContain('If the feedback is insufficient or ambiguous, fail instead of asking follow-up questions.');
     expect(executeSpy.mock.calls[1][0]).toContain('If the refinement instruction targets persisted repository artifacts under `plans/` or `specs/`, those files are explicitly in scope for this run and should be edited directly.');
+    expect(executeSpy.mock.calls[1][0]).toContain('Do not summarize the branch, the PR, or the planned work.');
+    expect(executeSpy.mock.calls[1][0]).toContain('Make the requested file edits directly in the workspace.');
+    expect(executeSpy.mock.calls[1][0]).toContain('array of relative file paths you actually changed during this run');
     expect(executeSpy.mock.calls[1][0]).toContain('Do not ask clarifying questions.');
     expect(executeSpy.mock.calls[1][0]).toContain('If the refinement instruction is insufficient or ambiguous, fail instead of asking follow-up questions.');
   });

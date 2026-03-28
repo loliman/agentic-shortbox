@@ -168,7 +168,8 @@ export class CodexRunner {
           changedFiles: { type: 'array', items: { type: 'string' } },
         },
       },
-      modelConf
+      modelConf,
+      false
     );
   }
 
@@ -183,6 +184,9 @@ export class CodexRunner {
           'Apply only the open review feedback listed below.',
           'Resolve the requested changes in the local repository.',
           'If the review feedback targets persisted repository artifacts under `plans/` or `specs/`, those files are explicitly in scope for this run and should be edited directly.',
+          'Do not summarize the branch, the PR, or the planned work.',
+          'Do not restate the existing implementation, spec, or plan unless needed for the exact edit.',
+          'Make the requested file edits directly in the workspace.',
           'Do not ask clarifying questions.',
           'If the feedback is insufficient or ambiguous, fail instead of asking follow-up questions.',
           'Do not make unrelated edits.',
@@ -193,7 +197,7 @@ export class CodexRunner {
         outputContract: [
           'Return a JSON object with:',
           '- `summary`: short summary of the review changes you applied',
-          '- `changedFiles`: array of relative file paths you changed',
+          '- `changedFiles`: array of relative file paths you actually changed during this run',
         ].join('\n'),
       },
       {
@@ -205,7 +209,8 @@ export class CodexRunner {
           changedFiles: { type: 'array', items: { type: 'string' } },
         },
       },
-      modelConf
+      modelConf,
+      false
     );
   }
 
@@ -220,6 +225,9 @@ export class CodexRunner {
           'Apply the following refinement request in the local repository.',
           'You must inspect the repository yourself and make only the changes needed for this refinement.',
           'If the refinement instruction targets persisted repository artifacts under `plans/` or `specs/`, those files are explicitly in scope for this run and should be edited directly.',
+          'Do not summarize the branch, the PR, or the planned work.',
+          'Do not restate the existing implementation, spec, or plan unless needed for the exact edit.',
+          'Make the requested file edits directly in the workspace.',
           'Do not ask clarifying questions.',
           'If the refinement instruction is insufficient or ambiguous, fail instead of asking follow-up questions.',
           '',
@@ -229,7 +237,7 @@ export class CodexRunner {
         outputContract: [
           'Return a JSON object with:',
           '- `summary`: short summary of the refinement you applied',
-          '- `changedFiles`: array of relative file paths you changed',
+          '- `changedFiles`: array of relative file paths you actually changed during this run',
         ].join('\n'),
       },
       {
@@ -241,11 +249,17 @@ export class CodexRunner {
           changedFiles: { type: 'array', items: { type: 'string' } },
         },
       },
-      modelConf
+      modelConf,
+      false
     );
   }
 
-  private async runStructuredTask<T>(task: CodexTaskContext, schema: Record<string, unknown>, modelConf: string): Promise<T> {
+  private async runStructuredTask<T>(
+    task: CodexTaskContext,
+    schema: Record<string, unknown>,
+    modelConf: string,
+    useOutputSchema: boolean = true
+  ): Promise<T> {
     if (!process.env.OPENAI_API_KEY) {
       throw new MissingConfigurationError('Codex requires `OPENAI_API_KEY`, but no OpenAI API key is configured for this repository.');
     }
@@ -267,7 +281,7 @@ export class CodexRunner {
     core.info('[CodexRunner] Prompt end');
 
     try {
-      const turn = await this.executeStructuredTurn(prompt, schema, modelConf, codexEnv);
+      const turn = await this.executeStructuredTurn(prompt, useOutputSchema ? schema : undefined, modelConf, codexEnv);
       const raw = turn.finalResponse.trim();
       core.info(`[CodexRunner] Completed turn items: ${turn.items.length}`);
       this.logTurnItems(turn.items);
@@ -285,7 +299,7 @@ export class CodexRunner {
 
   protected async executeStructuredTurn(
     prompt: string,
-    schema: Record<string, unknown>,
+    schema: Record<string, unknown> | undefined,
     modelConf: string,
     codexEnv: NodeJS.ProcessEnv
   ): Promise<CodexSdkTurn> {
@@ -313,7 +327,7 @@ export class CodexRunner {
       modelReasoningEffort: 'medium',
     });
 
-    const turn = await thread.run(prompt, { outputSchema: schema });
+    const turn = schema ? await thread.run(prompt, { outputSchema: schema }) : await thread.run(prompt);
     return {
       finalResponse: turn.finalResponse,
       items: turn.items as Array<{ type: string; [key: string]: unknown }>,
