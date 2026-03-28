@@ -44,6 +44,8 @@ interface PullRequestFeatureContext {
   plan: string;
 }
 
+const ARTIFACT_INDEX_MARKER = '<!-- ai-artifact-index:bot -->';
+
 export class BotController {
   private octokit: any;
   private ctx: { owner: string; repo: string };
@@ -351,7 +353,7 @@ export class BotController {
      if (!pushed) {
        throw new Error('Codex did not produce any committed file changes for this rework. Aborting instead of claiming success.');
      }
-     await this.postStatus(
+    await this.upsertArtifactIndexComment(
        payload.number,
        this.buildEditSummaryComment('🛠️ **Rework applied**', result.summary, result.changedFiles)
      );
@@ -398,7 +400,7 @@ export class BotController {
      if (!pushed) {
        throw new Error('Codex did not produce any committed file changes for this refinement. Aborting instead of claiming success.');
      }
-     await this.postStatus(
+    await this.upsertArtifactIndexComment(
        payload.number,
        this.buildEditSummaryComment('✨ **Refinement applied**', result.summary, result.changedFiles, refinementInstruction)
      );
@@ -456,6 +458,7 @@ export class BotController {
     persistedArtifacts: string[] = []
   ) {
     return [
+      ARTIFACT_INDEX_MARKER,
       heading,
       instruction ? ['**Instruction:**', instruction].join('\n') : null,
       ['**Summary:**', summary].join('\n'),
@@ -466,6 +469,37 @@ export class BotController {
         ? ['**Persisted artifacts:**', persistedArtifacts.map((filePath) => `- \`${filePath}\``).join('\n')].join('\n')
         : null,
     ].filter((section): section is string => Boolean(section)).join('\n\n');
+  }
+
+  private async upsertArtifactIndexComment(issueNumber: number, body: string) {
+    const comments = await this.octokit.rest.issues.listComments({
+      ...this.ctx,
+      issue_number: issueNumber,
+      per_page: 100,
+    });
+
+    const candidates = comments.data.filter((comment: any) => {
+      const commentBody = typeof comment?.body === 'string' ? comment.body : '';
+      const isBotAuthor = typeof comment?.user?.type === 'string' && comment.user.type.toLowerCase() === 'bot';
+      return isBotAuthor && commentBody.includes(ARTIFACT_INDEX_MARKER);
+    });
+
+    const target = [...candidates].sort((a: any, b: any) => (Number(b?.id) || 0) - (Number(a?.id) || 0))[0];
+
+    if (target?.id) {
+      await this.octokit.rest.issues.updateComment({
+        ...this.ctx,
+        comment_id: target.id,
+        body,
+      });
+      return;
+    }
+
+    await this.octokit.rest.issues.createComment({
+      ...this.ctx,
+      issue_number: issueNumber,
+      body,
+    });
   }
 
   private async fetchOpenReviewThreads(prNumber: number) {
