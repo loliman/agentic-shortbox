@@ -52,7 +52,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: christian-riese/agentic-shortbox@v6.5.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - uses: christian-riese/agentic-shortbox@v6.5.7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CODEX_SANDBOX_MODE: danger-full-access
@@ -67,6 +74,8 @@ In your repo: **Settings → Secrets and variables → Actions → New repositor
 | Secret name | Required |
 |---|---|
 | `OPENAI_API_KEY` | Required |
+
+The target repository dependencies must be installed before the bot runs so repository-local commands like `npm run lint` and `npm test -- --runInBand` can resolve tools such as `eslint` and `jest`.
 
 ### Step 3 — Configure per Issue
 
