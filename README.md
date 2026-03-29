@@ -52,7 +52,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: christian-riese/agentic-shortbox@v6.5.3
+      - uses: christian-riese/agentic-shortbox@v6.5.4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CODEX_SANDBOX_MODE: danger-full-access

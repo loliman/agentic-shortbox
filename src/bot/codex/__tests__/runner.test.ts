@@ -115,11 +115,35 @@ describe('CodexRunner', () => {
     expect(executeSpy.mock.calls[0][0]).toContain('Implement the feature directly in the local repository');
   });
 
+  it('retries edit tasks once when Codex only returns agent messages without workspace activity', async () => {
+    const runner = new CodexRunner();
+    const executeSpy = jest
+      .spyOn(runner as any, 'executeStructuredTurn')
+      .mockResolvedValueOnce({
+        finalResponse: '{"summary":"Claimed","changedFiles":["src/foo.ts"]}',
+        items: [{ type: 'agent_message', text: 'I changed src/foo.ts' }],
+      })
+      .mockResolvedValueOnce({
+        finalResponse: '{"summary":"Done","changedFiles":["src/foo.ts"]}',
+        items: [{ type: 'command', command: 'git status --short' }, { type: 'agent_message', text: '{"summary":"Done","changedFiles":["src/foo.ts"]}' }],
+      });
+
+    const result = await runner.implementFeature('Feature', 'Spec body', '# Plan', 'strong');
+
+    expect(result).toEqual({ summary: 'Done', changedFiles: ['src/foo.ts'] });
+    expect(executeSpy).toHaveBeenCalledTimes(2);
+    expect(executeSpy.mock.calls[1][0]).toContain('=== RETRY GUARD ===');
+    expect(executeSpy.mock.calls[1][0]).toContain('You must inspect and edit files directly in the workspace before returning the final JSON.');
+    expect(core.info).toHaveBeenCalledWith(
+      '[CodexRunner] Edit run produced only agent messages. Retrying once with a stricter workspace-edit instruction.'
+    );
+  });
+
   it('forbids follow-up questions during rework and refinement flows', async () => {
     const runner = new CodexRunner();
     const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
       finalResponse: '{"summary":"Done","changedFiles":["src/foo.ts"]}',
-      items: [],
+      items: [{ type: 'command', command: 'git status --short' }],
     });
 
     await runner.applyReviewRework('Feature', 'Spec body', '# Plan', 'file=src/foo.ts line=12: simplify this', 'fast');

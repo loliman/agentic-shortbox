@@ -283,7 +283,16 @@ export class CodexRunner {
     core.info('[CodexRunner] Prompt end');
 
     try {
-      const turn = await this.executeStructuredTurn(prompt, useOutputSchema ? schema : undefined, modelConf, codexEnv);
+      let turn = await this.executeStructuredTurn(prompt, useOutputSchema ? schema : undefined, modelConf, codexEnv);
+      if (this.shouldRetryEditTask(task, useOutputSchema, turn.items)) {
+        core.info('[CodexRunner] Edit run produced only agent messages. Retrying once with a stricter workspace-edit instruction.');
+        turn = await this.executeStructuredTurn(
+          this.buildRetryingEditPrompt(prompt),
+          useOutputSchema ? schema : undefined,
+          modelConf,
+          codexEnv
+        );
+      }
       const raw = turn.finalResponse.trim();
       core.info(`[CodexRunner] Completed turn items: ${turn.items.length}`);
       this.logTurnItems(turn.items);
@@ -297,6 +306,46 @@ export class CodexRunner {
     } catch (error: any) {
       throw new Error(error?.message || 'Codex SDK execution failed.');
     }
+  }
+
+  private shouldRetryEditTask(
+    task: CodexTaskContext,
+    useOutputSchema: boolean,
+    items: Array<{ type: string; [key: string]: unknown }>
+  ) {
+    if (useOutputSchema) {
+      return false;
+    }
+
+    if (!this.isEditCommand(task.commandName)) {
+      return false;
+    }
+
+    if (items.length === 0) {
+      return true;
+    }
+
+    return items.every((item) => item.type === 'agent_message');
+  }
+
+  private isEditCommand(commandName: string) {
+    return (
+      commandName === 'ready for implementation' ||
+      commandName === 'ready for rework' ||
+      commandName === 'ready for refinement'
+    );
+  }
+
+  private buildRetryingEditPrompt(prompt: string) {
+    return [
+      prompt,
+      '',
+      '=== RETRY GUARD ===',
+      'Your previous attempt returned only a summary message and did not show evidence of actual repository work.',
+      'You must inspect and edit files directly in the workspace before returning the final JSON.',
+      'Do not return a branch summary, status update, or claimed file list unless you actually modified those files in this run.',
+      'Before returning, verify that the repository has real local changes corresponding to `changedFiles`.',
+    ].join('\n');
   }
 
   protected async executeStructuredTurn(
