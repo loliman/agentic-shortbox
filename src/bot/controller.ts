@@ -45,6 +45,8 @@ interface PullRequestFeatureContext {
 }
 
 export class BotController {
+  private static readonly COMMENT_NODE_RESOLUTION_RETRIES = 3;
+  private static readonly COMMENT_NODE_RESOLUTION_DELAY_MS = 400;
   private octokit: any;
   private ctx: { owner: string; repo: string };
 
@@ -77,11 +79,7 @@ export class BotController {
           'Please configure the secret in GitHub so I can run Codex for your workflow commands.',
         ].join('\n\n');
 
-    await this.octokit.rest.issues.createComment({
-      ...this.ctx,
-      issue_number: issueNumber,
-      body: message
-    });
+    await this.createCommentWithRetry(issueNumber, message);
   }
 
   // 2. COMMAND PARSER & GATEWAY
@@ -408,7 +406,39 @@ export class BotController {
   
   // -- Utilities --
   private async postStatus(issueNumber: number, body: string) {
-    await this.octokit.rest.issues.createComment({ ...this.ctx, issue_number: issueNumber, body });
+    await this.createCommentWithRetry(issueNumber, body);
+  }
+
+  private async createCommentWithRetry(issueNumber: number, body: string) {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= BotController.COMMENT_NODE_RESOLUTION_RETRIES; attempt += 1) {
+      try {
+        await this.octokit.rest.issues.createComment({ ...this.ctx, issue_number: issueNumber, body });
+        return;
+      } catch (error: any) {
+        lastError = error;
+        if (!this.isTransientIssueNodeResolutionError(error) || attempt === BotController.COMMENT_NODE_RESOLUTION_RETRIES) {
+          throw error;
+        }
+
+        core.info(
+          `[Bot] Comment creation hit transient issue node resolution on #${issueNumber}. Retrying (${attempt}/${BotController.COMMENT_NODE_RESOLUTION_RETRIES})...`
+        );
+        await this.delay(BotController.COMMENT_NODE_RESOLUTION_DELAY_MS * attempt);
+      }
+    }
+
+    throw lastError;
+  }
+
+  private isTransientIssueNodeResolutionError(error: any) {
+    const message = String(error?.message || '');
+    return message.includes('Could not resolve to a node with the global id of');
+  }
+
+  protected async delay(ms: number) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private async replaceStateLabel(issueNumber: number, currentLabels: string[], newLabel: string) {

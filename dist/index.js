@@ -33255,6 +33255,8 @@ class MissingPlanError extends Error {
     }
 }
 class BotController {
+    static COMMENT_NODE_RESOLUTION_RETRIES = 3;
+    static COMMENT_NODE_RESOLUTION_DELAY_MS = 400;
     octokit;
     ctx;
     constructor(octokit, ctx) {
@@ -33284,11 +33286,7 @@ class BotController {
                 '⚠️ **I am currently offline.** No `OPENAI_API_KEY` was found in this repository.',
                 'Please configure the secret in GitHub so I can run Codex for your workflow commands.',
             ].join('\n\n');
-        await this.octokit.rest.issues.createComment({
-            ...this.ctx,
-            issue_number: issueNumber,
-            body: message
-        });
+        await this.createCommentWithRetry(issueNumber, message);
     }
     // 2. COMMAND PARSER & GATEWAY
     async handleCommand(payload) {
@@ -33534,7 +33532,32 @@ class BotController {
     }
     // -- Utilities --
     async postStatus(issueNumber, body) {
-        await this.octokit.rest.issues.createComment({ ...this.ctx, issue_number: issueNumber, body });
+        await this.createCommentWithRetry(issueNumber, body);
+    }
+    async createCommentWithRetry(issueNumber, body) {
+        let lastError;
+        for (let attempt = 1; attempt <= BotController.COMMENT_NODE_RESOLUTION_RETRIES; attempt += 1) {
+            try {
+                await this.octokit.rest.issues.createComment({ ...this.ctx, issue_number: issueNumber, body });
+                return;
+            }
+            catch (error) {
+                lastError = error;
+                if (!this.isTransientIssueNodeResolutionError(error) || attempt === BotController.COMMENT_NODE_RESOLUTION_RETRIES) {
+                    throw error;
+                }
+                core.info(`[Bot] Comment creation hit transient issue node resolution on #${issueNumber}. Retrying (${attempt}/${BotController.COMMENT_NODE_RESOLUTION_RETRIES})...`);
+                await this.delay(BotController.COMMENT_NODE_RESOLUTION_DELAY_MS * attempt);
+            }
+        }
+        throw lastError;
+    }
+    isTransientIssueNodeResolutionError(error) {
+        const message = String(error?.message || '');
+        return message.includes('Could not resolve to a node with the global id of');
+    }
+    async delay(ms) {
+        await new Promise((resolve) => setTimeout(resolve, ms));
     }
     async replaceStateLabel(issueNumber, currentLabels, newLabel) {
         const stateLabels = currentLabels.filter((l) => l.startsWith('state:'));

@@ -7,6 +7,8 @@ jest.mock('@actions/core');
 jest.mock('@actions/github');
 jest.mock('../../bot/controller');
 
+const MockBotController = BotController as unknown as jest.Mock;
+
 describe('GitHub Action Router (main)', () => {
   let originalExit: NodeJS.Process['exit'];
   const mockExit = jest.fn() as unknown as NodeJS.Process['exit'];
@@ -41,7 +43,7 @@ describe('GitHub Action Router (main)', () => {
     await main();
 
     expect(BotController).toHaveBeenCalled();
-    const mockControllerInstance = (BotController as jest.Mock).mock.instances[0];
+    const mockControllerInstance = MockBotController.mock.instances[0];
     expect(mockControllerInstance.handleWelcome).toHaveBeenCalledWith(10);
   });
 
@@ -55,7 +57,7 @@ describe('GitHub Action Router (main)', () => {
 
     await main();
 
-    const mockControllerInstance = (BotController as jest.Mock).mock.instances[0];
+    const mockControllerInstance = MockBotController.mock.instances[0];
     expect(mockControllerInstance.handleCommand).toHaveBeenCalledWith(expect.objectContaining({
        number: 42,
        author: 'octocat',
@@ -75,7 +77,7 @@ describe('GitHub Action Router (main)', () => {
 
     await main();
 
-    const mockControllerInstance = (BotController as jest.Mock).mock.instances[0];
+    const mockControllerInstance = MockBotController.mock.instances[0];
     expect(mockControllerInstance.handleCommand).not.toHaveBeenCalled();
     expect(core.info).toHaveBeenCalledWith('[Action] Ignoring bot-authored comment event.');
   });
@@ -90,7 +92,7 @@ describe('GitHub Action Router (main)', () => {
 
     await main();
 
-    const mockControllerInstance = (BotController as jest.Mock).mock.instances[0];
+    const mockControllerInstance = MockBotController.mock.instances[0];
     expect(mockControllerInstance.handleCommand).toHaveBeenCalledWith({
       number: 77,
       author: 'octocat',
@@ -110,7 +112,7 @@ describe('GitHub Action Router (main)', () => {
 
     await main();
 
-    const mockControllerInstance = (BotController as jest.Mock).mock.instances[0];
+    const mockControllerInstance = MockBotController.mock.instances[0];
     expect(mockControllerInstance.handleCommand).not.toHaveBeenCalled();
     expect(core.info).toHaveBeenCalledWith('[Action] Ignoring bot-authored review event.');
   });
@@ -123,7 +125,7 @@ describe('GitHub Action Router (main)', () => {
     };
 
     // Force BotController initialization to throw
-    (BotController as jest.Mock).mockImplementationOnce(() => {
+    MockBotController.mockImplementationOnce(() => {
        throw new Error('Fatal Configuration Fault');
     });
 

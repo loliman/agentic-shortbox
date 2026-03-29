@@ -74,6 +74,19 @@ describe('BotController', () => {
     }));
   });
 
+  it('retries comment creation when GitHub cannot immediately resolve a freshly created issue node', async () => {
+    process.env.OPENAI_API_KEY = 'mock';
+    const delaySpy = jest.spyOn(controller as any, 'delay').mockResolvedValue(undefined);
+    mockOctokit.rest.issues.createComment
+      .mockRejectedValueOnce(new Error("Validation Failed: {\"resource\":\"IssueComment\",\"code\":\"unprocessable\",\"field\":\"data\",\"message\":\"Could not resolve to a node with the global id of 'I_kwDORuzhXM74FEa7'.\"}"))
+      .mockResolvedValueOnce({});
+
+    await controller.handleWelcome(7);
+
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledTimes(2);
+    expect(delaySpy).toHaveBeenCalledWith(400);
+  });
+
   it('uses Codex for planning and updates the state label', async () => {
     (CodexRunner as jest.Mock).mockImplementation(() => ({
       generateImplementationPlan: jest.fn().mockResolvedValue({ action: 'plan', content: '# Architectural Plan' }),
