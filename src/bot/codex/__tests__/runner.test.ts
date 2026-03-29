@@ -128,6 +128,8 @@ describe('CodexRunner', () => {
     expect(executeSpy.mock.calls[0][0]).toContain('Implement the feature directly in the local repository');
     expect(executeSpy.mock.calls[0][0]).toContain('implement the full in-scope feature');
     expect(executeSpy.mock.calls[0][0]).toContain('A partial implementation is not a successful implementation.');
+    expect(executeSpy.mock.calls[0][0]).toContain('Missing verification tools do not excuse skipping implementable code changes.');
+    expect(executeSpy.mock.calls[0][0]).toContain('You must complete all unblocked in-scope implementation work before returning `status` = `blocked`.');
     expect(executeSpy.mock.calls[0][0]).toContain('You must evaluate the acceptance criteria one by one before finishing.');
     expect(executeSpy.mock.calls[0][0]).toContain('- `status`: one of `completed`, `partial`, or `blocked`');
     expect(executeSpy.mock.calls[0][0]).toContain('- `acceptanceCriteria`: array of objects with `criterion`, `status`, and `evidence`');

@@ -202,6 +202,8 @@ export class CodexRunner {
           'Do not present the feature as complete if required work remains incomplete.',
           'Explicitly report the blocker and every remaining incomplete item.',
           'Missing `eslint`, `jest`, dependencies, credentials, or other tooling is a blocker for completion if the spec requires those checks to pass.',
+          'Missing verification tools do not excuse skipping implementable code changes.',
+          'You must complete all unblocked in-scope implementation work before returning `status` = `blocked`.',
           'If some code is implemented but the full feature is not complete, return `status` = `partial`.',
           'Return `status` = `completed` only if all in-scope implementation work is done, all required acceptance criteria are satisfied, and all required verification steps were actually run successfully.',
           '',
