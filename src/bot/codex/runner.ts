@@ -1,10 +1,12 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { spawnSync } from 'child_process';
 import * as core from '@actions/core';
 import { Codex } from '../../../node_modules/@openai/codex-sdk/dist/index.js';
 
 const DEFAULT_OPENAI_BASE_URL = 'https://adesso-ai-hub.3asabc.de/v1';
+const CODEX_NPM_VERSION = '0.117.0';
 
 export interface EpicSplitTask {
   title: string;
@@ -303,9 +305,11 @@ export class CodexRunner {
     modelConf: string,
     codexEnv: NodeJS.ProcessEnv
   ): Promise<CodexSdkTurn> {
+    const codexPathOverride = this.ensureCodexCliAvailable(codexEnv);
     const codex = new Codex({
       apiKey: codexEnv.OPENAI_API_KEY,
       baseUrl: codexEnv.OPENAI_BASE_URL,
+      codexPathOverride,
       env: codexEnv as Record<string, string>,
       config: {
         preferred_auth_method: 'apikey',
@@ -325,6 +329,74 @@ export class CodexRunner {
       finalResponse: turn.finalResponse,
       items: turn.items as Array<{ type: string; [key: string]: unknown }>,
     };
+  }
+
+  protected ensureCodexCliAvailable(codexEnv: NodeJS.ProcessEnv): string {
+    for (const candidate of this.collectCodexCliCandidates()) {
+      if (fs.existsSync(candidate)) {
+        core.info(`[CodexRunner] Using Codex CLI at ${candidate}`);
+        return candidate;
+      }
+    }
+
+    const runtimeRoot = path.join(os.tmpdir(), 'agentic-shortbox-codex-cli', CODEX_NPM_VERSION);
+    const runtimeCliPath = path.join(runtimeRoot, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+
+    if (fs.existsSync(runtimeCliPath)) {
+      core.info(`[CodexRunner] Using provisioned Codex CLI at ${runtimeCliPath}`);
+      return runtimeCliPath;
+    }
+
+    fs.mkdirSync(runtimeRoot, { recursive: true });
+    core.info(`[CodexRunner] Provisioning Codex CLI runtime in ${runtimeRoot}`);
+
+    const installEnv = {
+      ...codexEnv,
+      npm_config_registry: process.env.npm_config_registry || 'https://registry.npmjs.org',
+    };
+    const installArgs = ['install', '--no-save', '--prefix', runtimeRoot, `@openai/codex@${CODEX_NPM_VERSION}`];
+    const installResult = spawnSync('npm', installArgs, {
+      env: installEnv,
+      encoding: 'utf8',
+    });
+
+    if (installResult.error) {
+      throw new Error(`Failed to provision Codex CLI runtime: ${installResult.error.message}`);
+    }
+
+    if (installResult.status !== 0) {
+      throw new Error(
+        [
+          'Failed to provision Codex CLI runtime via npm.',
+          installResult.stdout?.trim(),
+          installResult.stderr?.trim(),
+        ]
+          .filter(Boolean)
+          .join('\n')
+      );
+    }
+
+    if (!fs.existsSync(runtimeCliPath)) {
+      throw new Error(
+        `Provisioned Codex CLI runtime, but no executable was found at ${runtimeCliPath}. Ensure @openai/codex optional dependencies installed correctly.`
+      );
+    }
+
+    core.info(`[CodexRunner] Using provisioned Codex CLI at ${runtimeCliPath}`);
+    return runtimeCliPath;
+  }
+
+  private collectCodexCliCandidates(): string[] {
+    const candidates = [
+      path.join(process.cwd(), 'node_modules', '@openai', 'codex', 'bin', 'codex.js'),
+      path.resolve(__dirname, '..', '..', '..', 'node_modules', '@openai', 'codex', 'bin', 'codex.js'),
+    ];
+
+    if (process.env.GITHUB_ACTION_PATH) {
+      candidates.push(path.join(process.env.GITHUB_ACTION_PATH, 'node_modules', '@openai', 'codex', 'bin', 'codex.js'));
+    }
+
+    return [...new Set(candidates)];
   }
 
   private buildPrompt(task: CodexTaskContext): string {

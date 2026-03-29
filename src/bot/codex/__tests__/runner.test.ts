@@ -1,10 +1,14 @@
 import fs from 'fs';
 import os from 'os';
+import { spawnSync } from 'child_process';
 import * as core from '@actions/core';
 import { CodexRunner, MissingConfigurationError } from '../runner';
 
 jest.mock('fs');
 jest.mock('os');
+jest.mock('child_process', () => ({
+  spawnSync: jest.fn(),
+}));
 jest.mock('@actions/core', () => ({
   info: jest.fn(),
 }));
@@ -18,6 +22,12 @@ describe('CodexRunner', () => {
     (os.tmpdir as jest.Mock).mockReturnValue('/tmp');
     (os.homedir as jest.Mock).mockReturnValue('/home/tester');
     (fs.mkdirSync as jest.Mock).mockImplementation(() => undefined);
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
+    (spawnSync as jest.Mock).mockReturnValue({
+      status: 0,
+      stdout: '',
+      stderr: '',
+    });
   });
 
   afterAll(() => {
@@ -319,6 +329,53 @@ describe('CodexRunner', () => {
     });
     await expect(runner.generateEpicSplit('Epic', 'Spec')).rejects.toThrow(
       'Codex returned an invalid array item: `title` must be a non-empty string.'
+    );
+  });
+
+  it('uses a locally available Codex CLI when present', () => {
+    (fs.existsSync as jest.Mock).mockImplementation((value: string) => value === '/repo/node_modules/@openai/codex/bin/codex.js');
+    const cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue('/repo');
+    const runner = new CodexRunner() as any;
+
+    expect(runner.ensureCodexCliAvailable({ OPENAI_API_KEY: 'test-key' })).toBe('/repo/node_modules/@openai/codex/bin/codex.js');
+    expect(spawnSync).not.toHaveBeenCalled();
+    expect(core.info).toHaveBeenCalledWith('[CodexRunner] Using Codex CLI at /repo/node_modules/@openai/codex/bin/codex.js');
+
+    cwdSpy.mockRestore();
+  });
+
+  it('provisions a temp Codex CLI runtime when no local binary is available', () => {
+    let runtimeCliSeen = false;
+    (fs.existsSync as jest.Mock).mockImplementation((value: string) => {
+      if (value === '/tmp/agentic-shortbox-codex-cli/0.117.0/node_modules/@openai/codex/bin/codex.js') {
+        if (!runtimeCliSeen) {
+          runtimeCliSeen = true;
+          return false;
+        }
+        return true;
+      }
+      return false;
+    });
+    const runner = new CodexRunner() as any;
+
+    expect(runner.ensureCodexCliAvailable({ OPENAI_API_KEY: 'test-key', PATH: '/usr/bin' })).toBe(
+      '/tmp/agentic-shortbox-codex-cli/0.117.0/node_modules/@openai/codex/bin/codex.js'
+    );
+    expect(fs.mkdirSync).toHaveBeenCalledWith('/tmp/agentic-shortbox-codex-cli/0.117.0', { recursive: true });
+    expect(spawnSync).toHaveBeenCalledWith(
+      'npm',
+      ['install', '--no-save', '--prefix', '/tmp/agentic-shortbox-codex-cli/0.117.0', '@openai/codex@0.117.0'],
+      expect.objectContaining({
+        encoding: 'utf8',
+        env: expect.objectContaining({
+          OPENAI_API_KEY: 'test-key',
+          PATH: '/usr/bin',
+          npm_config_registry: 'https://registry.npmjs.org',
+        }),
+      })
+    );
+    expect(core.info).toHaveBeenCalledWith(
+      '[CodexRunner] Using provisioned Codex CLI at /tmp/agentic-shortbox-codex-cli/0.117.0/node_modules/@openai/codex/bin/codex.js'
     );
   });
 });
