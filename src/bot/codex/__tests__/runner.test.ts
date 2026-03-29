@@ -60,6 +60,10 @@ describe('CodexRunner', () => {
     expect(executeSpy.mock.calls[0][0]).toContain('The `tasks` array must contain 3 to 5 items.');
     expect(executeSpy.mock.calls[0][0]).toContain('Use this visible issue title pattern exactly: "Epic / Spec NN: <Short Child Scope>"');
     expect(executeSpy.mock.calls[0][0]).toContain('ready to be stored under `specs/`');
+    expect(executeSpy.mock.calls[0][0]).toContain('Do not merely restate or lightly rephrase the parent issue.');
+    expect(executeSpy.mock.calls[0][0]).toContain('Each child spec must include binary acceptance criteria that can be judged as satisfied or not satisfied.');
+    expect(executeSpy.mock.calls[0][0]).toContain('If a child spec includes conditional work, you must explicitly define the no-op condition.');
+    expect(executeSpy.mock.calls[0][0]).toContain('Each `specMarkdown` must contain explicit verification expectations.');
     expect(executeSpy.mock.calls[0][0]).toContain('Return only valid JSON with no markdown fences and no commentary.');
   });
 

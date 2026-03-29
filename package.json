@@ -1,6 +1,6 @@
 {
   "name": "agentic-shortbox",
-  "version": "6.5.5",
+  "version": "6.5.6",
   "description": "A GitHub-native AI developer bot that plans, implements, and reviews code via Issue comments.",
   "main": "dist/index.js",
   "directories": {
