@@ -36,11 +36,13 @@ on:
     types: [opened]
   issue_comment:
     types: [created]
+  pull_request_review:
+    types: [submitted]
 
 jobs:
   ai-bot:
     runs-on: ubuntu-latest
-    if: github.event_name != 'issue_comment' || github.event.sender.type != 'Bot'
+    if: github.event_name == 'issues' || github.event.sender.type != 'Bot'
 
     permissions:
       contents: write
@@ -50,7 +52,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: christian-riese/agentic-shortbox@v6.5.0
+      - uses: christian-riese/agentic-shortbox@v6.5.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CODEX_SANDBOX_MODE: danger-full-access
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
@@ -78,6 +83,7 @@ That's it. Open an issue and the bot greets you.
 For Pull Requests:
 - Use `ready for rework` after concrete review feedback is in place.
 - Use `ready for refinement <instruction>` when you want broader polish and put the full instruction in the same comment.
+- If you submit `ready for rework` as a GitHub PR review instead of a normal PR comment, your workflow must include the `pull_request_review` trigger shown above.
 
 Command rules:
 - Commands should stand alone in the comment.

@@ -1,8 +1,8 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { pathToFileURL } from 'url';
 import * as core from '@actions/core';
+import { Codex } from '../../../node_modules/@openai/codex-sdk/dist/index.js';
 
 const DEFAULT_OPENAI_BASE_URL = 'https://adesso-ai-hub.3asabc.de/v1';
 
@@ -303,13 +303,6 @@ export class CodexRunner {
     modelConf: string,
     codexEnv: NodeJS.ProcessEnv
   ): Promise<CodexSdkTurn> {
-    const sdkModulePath = pathToFileURL(
-      path.resolve(process.cwd(), 'node_modules/@openai/codex-sdk/dist/index.js')
-    ).href;
-    const dynamicImport = new Function('modulePath', 'return import(modulePath);') as (
-      modulePath: string
-    ) => Promise<{ Codex: new (options?: Record<string, unknown>) => any }>;
-    const { Codex } = await dynamicImport(sdkModulePath);
     const codex = new Codex({
       apiKey: codexEnv.OPENAI_API_KEY,
       baseUrl: codexEnv.OPENAI_BASE_URL,
