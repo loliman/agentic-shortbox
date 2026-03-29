@@ -102,17 +102,31 @@ describe('CodexRunner', () => {
   it('asks Codex to gather repository context itself for implementation', async () => {
     const runner = new CodexRunner();
     const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
-      finalResponse: '{"summary":"Done","changedFiles":["src/foo.ts"]}',
+      finalResponse:
+        '{"status":"completed","summary":"Done","changedFiles":["src/foo.ts"],"acceptanceCriteria":[{"criterion":"Feature fully implemented","status":"satisfied","evidence":"All in-scope changes completed"}],"verification":[{"command":"npm test","status":"passed","details":"All required checks passed"}],"remainingWork":[],"blockers":[]}',
       items: [],
     });
     const result = await runner.implementFeature('Feature', 'Spec body', '# Plan', 'strong');
 
-    expect(result).toEqual({ summary: 'Done', changedFiles: ['src/foo.ts'] });
+    expect(result).toEqual({
+      status: 'completed',
+      summary: 'Done',
+      changedFiles: ['src/foo.ts'],
+      acceptanceCriteria: [{ criterion: 'Feature fully implemented', status: 'satisfied', evidence: 'All in-scope changes completed' }],
+      verification: [{ command: 'npm test', status: 'passed', details: 'All required checks passed' }],
+      remainingWork: [],
+      blockers: [],
+    });
     expect(executeSpy.mock.calls[0][0]).toContain('Gather the context you need from the local repository');
     expect(executeSpy.mock.calls[0][0]).toContain('=== FEATURE SPEC ===');
     expect(executeSpy.mock.calls[0][0]).toContain('=== IMPLEMENTATION PLAN ===');
     expect(executeSpy.mock.calls[0][0]).toContain('# Plan');
     expect(executeSpy.mock.calls[0][0]).toContain('Implement the feature directly in the local repository');
+    expect(executeSpy.mock.calls[0][0]).toContain('implement the full in-scope feature');
+    expect(executeSpy.mock.calls[0][0]).toContain('A partial implementation is not a successful implementation.');
+    expect(executeSpy.mock.calls[0][0]).toContain('You must evaluate the acceptance criteria one by one before finishing.');
+    expect(executeSpy.mock.calls[0][0]).toContain('- `status`: one of `completed`, `partial`, or `blocked`');
+    expect(executeSpy.mock.calls[0][0]).toContain('- `acceptanceCriteria`: array of objects with `criterion`, `status`, and `evidence`');
   });
 
   it('retries edit tasks once when Codex only returns agent messages without workspace activity', async () => {
@@ -120,17 +134,33 @@ describe('CodexRunner', () => {
     const executeSpy = jest
       .spyOn(runner as any, 'executeStructuredTurn')
       .mockResolvedValueOnce({
-        finalResponse: '{"summary":"Claimed","changedFiles":["src/foo.ts"]}',
+        finalResponse:
+          '{"status":"completed","summary":"Claimed","changedFiles":["src/foo.ts"],"acceptanceCriteria":[{"criterion":"Feature fully implemented","status":"satisfied","evidence":"Claimed only"}],"verification":[{"command":"npm test","status":"not_run","details":"Not shown"}],"remainingWork":[],"blockers":[]}',
         items: [{ type: 'agent_message', text: 'I changed src/foo.ts' }],
       })
       .mockResolvedValueOnce({
-        finalResponse: '{"summary":"Done","changedFiles":["src/foo.ts"]}',
-        items: [{ type: 'command', command: 'git status --short' }, { type: 'agent_message', text: '{"summary":"Done","changedFiles":["src/foo.ts"]}' }],
+        finalResponse:
+          '{"status":"completed","summary":"Done","changedFiles":["src/foo.ts"],"acceptanceCriteria":[{"criterion":"Feature fully implemented","status":"satisfied","evidence":"Implemented in workspace"}],"verification":[{"command":"git status --short","status":"passed","details":"Workspace change confirmed"}],"remainingWork":[],"blockers":[]}',
+        items: [
+          { type: 'command', command: 'git status --short' },
+          {
+            type: 'agent_message',
+            text: '{"status":"completed","summary":"Done","changedFiles":["src/foo.ts"],"acceptanceCriteria":[{"criterion":"Feature fully implemented","status":"satisfied","evidence":"Implemented in workspace"}],"verification":[{"command":"git status --short","status":"passed","details":"Workspace change confirmed"}],"remainingWork":[],"blockers":[]}',
+          },
+        ],
       });
 
     const result = await runner.implementFeature('Feature', 'Spec body', '# Plan', 'strong');
 
-    expect(result).toEqual({ summary: 'Done', changedFiles: ['src/foo.ts'] });
+    expect(result).toEqual({
+      status: 'completed',
+      summary: 'Done',
+      changedFiles: ['src/foo.ts'],
+      acceptanceCriteria: [{ criterion: 'Feature fully implemented', status: 'satisfied', evidence: 'Implemented in workspace' }],
+      verification: [{ command: 'git status --short', status: 'passed', details: 'Workspace change confirmed' }],
+      remainingWork: [],
+      blockers: [],
+    });
     expect(executeSpy).toHaveBeenCalledTimes(2);
     expect(executeSpy.mock.calls[1][0]).toContain('=== RETRY GUARD ===');
     expect(executeSpy.mock.calls[1][0]).toContain('You must inspect and edit files directly in the workspace before returning the final JSON.');

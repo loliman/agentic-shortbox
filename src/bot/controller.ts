@@ -3,11 +3,22 @@ import { CodexRunner } from './codex/runner';
 import { GitManager } from './git/manager';
 import { parseCommand, parseConfiguration, suggestCommand } from '../core/parser';
 import { extractCurrentState, evaluateTransition, IllegalTransitionError } from '../core/state-machine';
+import type { CodexEditResult } from './codex/runner';
 
 class MissingPlanError extends Error {
   constructor() {
     super('Cannot start implementation because no implementation plan exists yet.');
     this.name = 'MissingPlanError';
+  }
+}
+
+class IncompleteImplementationError extends Error {
+  result: CodexEditResult;
+
+  constructor(result: CodexEditResult, details: string) {
+    super(details);
+    this.name = 'IncompleteImplementationError';
+    this.result = result;
   }
 }
 
@@ -264,6 +275,21 @@ export class BotController {
       plan,
       config.model
     );
+    if (implementationResult.status !== 'completed') {
+      const incompleteCriteria = implementationResult.acceptanceCriteria
+        .filter((criterion) => criterion.status !== 'satisfied')
+        .map((criterion) => `${criterion.criterion} [${criterion.status}]`);
+      const details = [
+        `Codex returned implementation status \`${implementationResult.status}\`, so this run cannot be published as a completed PR.`,
+        implementationResult.summary ? `Summary: ${implementationResult.summary}` : null,
+        incompleteCriteria.length ? `Unmet acceptance criteria: ${incompleteCriteria.join('; ')}` : null,
+        implementationResult.remainingWork.length ? `Remaining work: ${implementationResult.remainingWork.join('; ')}` : null,
+        implementationResult.blockers.length ? `Blockers: ${implementationResult.blockers.join('; ')}` : null,
+      ]
+        .filter((section): section is string => Boolean(section))
+        .join(' ');
+      throw new IncompleteImplementationError(implementationResult, details);
+    }
     const hasImplementationChanges = await git.hasWorkingTreeChanges();
     if (!hasImplementationChanges) {
       throw new Error('Codex did not produce any working tree changes for this implementation. Aborting before creating a PR.');
@@ -742,6 +768,39 @@ export class BotController {
     const message = error.message || 'Unknown error';
     if (error instanceof MissingPlanError) {
       return '🤖 **Workflow Error**\n\nI cannot start implementation yet because this issue does not have an approved implementation plan. Please run `ready for planning` first and review the generated plan before trying `ready for implementation` again.';
+    }
+    if (error instanceof IncompleteImplementationError) {
+      const unmetCriteria = error.result.acceptanceCriteria.filter((criterion) => criterion.status !== 'satisfied');
+      const blockedVerification = error.result.verification.filter((entry) => entry.status !== 'passed');
+      return [
+        `🤖 **Implementation ${error.result.status === 'blocked' ? 'blocked' : 'incomplete'}**`,
+        error.result.summary,
+        unmetCriteria.length
+          ? [
+              '**Unmet acceptance criteria:**',
+              unmetCriteria
+                .map((criterion) => `- [${criterion.status}] ${criterion.criterion}${criterion.evidence ? ` — ${criterion.evidence}` : ''}`)
+                .join('\n'),
+            ].join('\n')
+          : null,
+        blockedVerification.length
+          ? [
+              '**Verification status:**',
+              blockedVerification
+                .map((entry) => `- [${entry.status}] \`${entry.command}\`${entry.details ? ` — ${entry.details}` : ''}`)
+                .join('\n'),
+            ].join('\n')
+          : null,
+        error.result.remainingWork.length
+          ? ['**Remaining work:**', error.result.remainingWork.map((item) => `- ${item}`).join('\n')].join('\n')
+          : null,
+        error.result.blockers.length
+          ? ['**Blockers:**', error.result.blockers.map((item) => `- ${item}`).join('\n')].join('\n')
+          : null,
+        'This run did not produce a mergeable implementation PR.',
+      ]
+        .filter((section): section is string => Boolean(section))
+        .join('\n\n');
     }
     const guidance = message.includes('GitHub Actions is not permitted to create or approve pull requests')
       ? '\n\nGitHub is rejecting PR creation from the workflow token. Enable the repository setting `Allow GitHub Actions to create and approve pull requests` under `Settings -> Actions -> General -> Workflow permissions`, then rerun the command.'

@@ -184,8 +184,13 @@ describe('BotController', () => {
   it('uses Codex for implementation and then opens a PR', async () => {
     (CodexRunner as jest.Mock).mockImplementation(() => ({
       implementFeature: jest.fn().mockResolvedValue({
+        status: 'completed',
         summary: 'Implemented the feature in the local repository.',
         changedFiles: ['src/foo.ts'],
+        acceptanceCriteria: [],
+        verification: [],
+        remainingWork: [],
+        blockers: [],
       }),
     }));
 
@@ -320,6 +325,71 @@ describe('BotController', () => {
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 99,
       body: expect.stringContaining('If everything looks good, merge the PR.'),
+    }));
+  });
+
+  it('aborts implementation when Codex reports a partial result', async () => {
+    (CodexRunner as jest.Mock).mockImplementation(() => ({
+      implementFeature: jest.fn().mockResolvedValue({
+        status: 'partial',
+        summary: 'Only one route was updated.',
+        changedFiles: ['app/api/change-requests/route.ts'],
+        acceptanceCriteria: [
+          {
+            criterion: 'npm run lint passes with the intended architectural boundary checks enabled.',
+            status: 'blocked',
+            evidence: 'eslint executable unavailable',
+          },
+        ],
+        verification: [
+          {
+            command: 'npm run lint',
+            status: 'blocked',
+            details: 'eslint executable unavailable',
+          },
+        ],
+        remainingWork: ['Complete env centralization', 'Fix Jest baseline'],
+        blockers: ['eslint executable unavailable'],
+      }),
+    }));
+
+    const mockGit = {
+      checkoutNewBranch: jest.fn(),
+      hasWorkingTreeChanges: jest.fn(),
+      commitAndPush: jest.fn(),
+      applyMissingFileSystemChanges: jest.fn(),
+    };
+    (GitManager as jest.Mock).mockImplementation(() => mockGit);
+    mockOctokit.rest.issues.listComments
+      .mockResolvedValueOnce({ data: [{ body: '**Implementation Plan**\n\n# Plan' }] })
+      .mockResolvedValueOnce({ data: [{ body: '**Implementation Plan**\n\n# Plan' }] });
+
+    await expect(controller.handleCommand({
+      number: 7,
+      author: 'eve',
+      body: 'ready for implementation',
+      labels: ['state:planned', 'model:strong'],
+      isPR: false,
+    })).rejects.toThrow(/Codex returned implementation status `partial`/);
+
+    expect(mockGit.hasWorkingTreeChanges).not.toHaveBeenCalled();
+    expect(mockGit.commitAndPush).not.toHaveBeenCalled();
+    expect(mockOctokit.rest.pulls.create).not.toHaveBeenCalled();
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 7,
+      body: expect.stringContaining('🤖 **Implementation incomplete**'),
+    }));
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 7,
+      body: expect.stringContaining('**Unmet acceptance criteria:**'),
+    }));
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 7,
+      body: expect.stringContaining('**Verification status:**'),
+    }));
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 7,
+      body: expect.stringContaining('This run did not produce a mergeable implementation PR.'),
     }));
   });
 

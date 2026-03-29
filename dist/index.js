@@ -32700,21 +32700,87 @@ class CodexRunner {
             commandInstruction: [
                 'Implement the feature directly in the local repository.',
                 'You are responsible for gathering your own code context from the repository before editing anything.',
-                'Inspect the existing code, understand the relevant modules, and then make the smallest coherent set of code changes needed.',
+                'Inspect the existing code, understand the relevant modules, and then implement the full in-scope feature.',
+                'Do not stop after the first valid improvement.',
+                'Do not intentionally narrow scope to a subset of the feature.',
+                'Make the smallest coherent set of code changes that fully satisfies the in-scope spec and plan.',
+                'Treat the feature spec as the source of truth for required scope.',
+                'Treat the implementation plan as the required execution outline unless repository reality forces a justified adjustment.',
+                'You must audit the repository against the feature spec and implementation plan before editing.',
+                'You must identify every in-scope file or module that still requires work.',
+                'You must implement all required in-scope changes, not just the easiest or safest subset.',
+                'You must run the relevant verification commands required by the spec and plan.',
+                'You must evaluate the acceptance criteria one by one before finishing.',
                 'Do not edit `specs/`, `plans/`, `docs/`, or `AGENTS.md` unless the feature explicitly requires it.',
+                'If the feature or plan says to update plan/status artifacts, only do so when the repository workflow clearly expects those artifacts to be changed as part of implementation.',
+                '',
+                '=== COMPLETION RULES ===',
+                'A partial implementation is not a successful implementation.',
+                'You must not report success if any required in-scope acceptance criterion is not implemented, not verified, or blocked by missing tools, dependencies, or environment setup.',
+                'If you encounter a blocker, keep going as far as you safely can on all unblocked in-scope work.',
+                'Do not silently reduce scope.',
+                'Do not present the feature as complete if required work remains incomplete.',
+                'Explicitly report the blocker and every remaining incomplete item.',
+                'Missing `eslint`, `jest`, dependencies, credentials, or other tooling is a blocker for completion if the spec requires those checks to pass.',
+                'If some code is implemented but the full feature is not complete, return `status` = `partial`.',
+                'Return `status` = `completed` only if all in-scope implementation work is done, all required acceptance criteria are satisfied, and all required verification steps were actually run successfully.',
+                '',
+                '=== REQUIRED SELF-CHECK BEFORE FINISHING ===',
+                'Before producing your final answer, explicitly check whether you implemented every in-scope requirement from the feature spec.',
+                'Explicitly check whether you implemented every required execution item from the plan, or documented a justified repository-based reason not to.',
+                'Explicitly check whether you ran the required verification commands.',
+                'Explicitly check whether those commands actually passed.',
+                'Explicitly check whether every acceptance criterion is satisfied, not just partially addressed.',
+                'Do not claim completion for work that was only audited but not implemented.',
             ].join('\n'),
             outputContract: [
                 'Return a JSON object with:',
+                '- `status`: one of `completed`, `partial`, or `blocked`',
                 '- `summary`: short summary of what you implemented',
                 '- `changedFiles`: array of relative file paths you changed',
+                '- `acceptanceCriteria`: array of objects with `criterion`, `status`, and `evidence`',
+                '- `verification`: array of objects with `command`, `status`, and `details`',
+                '- `remainingWork`: array of short strings describing anything still incomplete',
+                '- `blockers`: array of short strings describing blockers encountered',
+                'Do not omit incomplete or failed items.',
+                'Do not mark the task as completed if any required acceptance criterion is not satisfied.',
             ].join('\n'),
         }, {
             type: 'object',
             additionalProperties: false,
-            required: ['summary', 'changedFiles'],
+            required: ['status', 'summary', 'changedFiles', 'acceptanceCriteria', 'verification', 'remainingWork', 'blockers'],
             properties: {
+                status: { type: 'string', enum: ['completed', 'partial', 'blocked'] },
                 summary: { type: 'string' },
                 changedFiles: { type: 'array', items: { type: 'string' } },
+                acceptanceCriteria: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        required: ['criterion', 'status', 'evidence'],
+                        properties: {
+                            criterion: { type: 'string' },
+                            status: { type: 'string', enum: ['satisfied', 'not_satisfied', 'blocked'] },
+                            evidence: { type: 'string' },
+                        },
+                    },
+                },
+                verification: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        required: ['command', 'status', 'details'],
+                        properties: {
+                            command: { type: 'string' },
+                            status: { type: 'string', enum: ['passed', 'failed', 'blocked', 'not_run'] },
+                            details: { type: 'string' },
+                        },
+                    },
+                },
+                remainingWork: { type: 'array', items: { type: 'string' } },
+                blockers: { type: 'array', items: { type: 'string' } },
             },
         }, modelConf, false);
     }
@@ -33286,6 +33352,14 @@ class MissingPlanError extends Error {
         this.name = 'MissingPlanError';
     }
 }
+class IncompleteImplementationError extends Error {
+    result;
+    constructor(result, details) {
+        super(details);
+        this.name = 'IncompleteImplementationError';
+        this.result = result;
+    }
+}
 class BotController {
     static COMMENT_NODE_RESOLUTION_RETRIES = 3;
     static COMMENT_NODE_RESOLUTION_DELAY_MS = 400;
@@ -33471,6 +33545,21 @@ class BotController {
         // Git checkouts locally
         await git.checkoutNewBranch(branchName);
         const implementationResult = await agent.implementFeature(issueData.data.title || '', issueData.data.body || '', plan, config.model);
+        if (implementationResult.status !== 'completed') {
+            const incompleteCriteria = implementationResult.acceptanceCriteria
+                .filter((criterion) => criterion.status !== 'satisfied')
+                .map((criterion) => `${criterion.criterion} [${criterion.status}]`);
+            const details = [
+                `Codex returned implementation status \`${implementationResult.status}\`, so this run cannot be published as a completed PR.`,
+                implementationResult.summary ? `Summary: ${implementationResult.summary}` : null,
+                incompleteCriteria.length ? `Unmet acceptance criteria: ${incompleteCriteria.join('; ')}` : null,
+                implementationResult.remainingWork.length ? `Remaining work: ${implementationResult.remainingWork.join('; ')}` : null,
+                implementationResult.blockers.length ? `Blockers: ${implementationResult.blockers.join('; ')}` : null,
+            ]
+                .filter((section) => Boolean(section))
+                .join(' ');
+            throw new IncompleteImplementationError(implementationResult, details);
+        }
         const hasImplementationChanges = await git.hasWorkingTreeChanges();
         if (!hasImplementationChanges) {
             throw new Error('Codex did not produce any working tree changes for this implementation. Aborting before creating a PR.');
@@ -33834,6 +33923,39 @@ class BotController {
         const message = error.message || 'Unknown error';
         if (error instanceof MissingPlanError) {
             return '🤖 **Workflow Error**\n\nI cannot start implementation yet because this issue does not have an approved implementation plan. Please run `ready for planning` first and review the generated plan before trying `ready for implementation` again.';
+        }
+        if (error instanceof IncompleteImplementationError) {
+            const unmetCriteria = error.result.acceptanceCriteria.filter((criterion) => criterion.status !== 'satisfied');
+            const blockedVerification = error.result.verification.filter((entry) => entry.status !== 'passed');
+            return [
+                `🤖 **Implementation ${error.result.status === 'blocked' ? 'blocked' : 'incomplete'}**`,
+                error.result.summary,
+                unmetCriteria.length
+                    ? [
+                        '**Unmet acceptance criteria:**',
+                        unmetCriteria
+                            .map((criterion) => `- [${criterion.status}] ${criterion.criterion}${criterion.evidence ? ` — ${criterion.evidence}` : ''}`)
+                            .join('\n'),
+                    ].join('\n')
+                    : null,
+                blockedVerification.length
+                    ? [
+                        '**Verification status:**',
+                        blockedVerification
+                            .map((entry) => `- [${entry.status}] \`${entry.command}\`${entry.details ? ` — ${entry.details}` : ''}`)
+                            .join('\n'),
+                    ].join('\n')
+                    : null,
+                error.result.remainingWork.length
+                    ? ['**Remaining work:**', error.result.remainingWork.map((item) => `- ${item}`).join('\n')].join('\n')
+                    : null,
+                error.result.blockers.length
+                    ? ['**Blockers:**', error.result.blockers.map((item) => `- ${item}`).join('\n')].join('\n')
+                    : null,
+                'This run did not produce a mergeable implementation PR.',
+            ]
+                .filter((section) => Boolean(section))
+                .join('\n\n');
         }
         const guidance = message.includes('GitHub Actions is not permitted to create or approve pull requests')
             ? '\n\nGitHub is rejecting PR creation from the workflow token. Enable the repository setting `Allow GitHub Actions to create and approve pull requests` under `Settings -> Actions -> General -> Workflow permissions`, then rerun the command.'
