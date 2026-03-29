@@ -51,16 +51,18 @@ describe('CodexRunner', () => {
     await runner.generateEpicSplit('Epic', 'Spec');
 
     expect(executeSpy).toHaveBeenCalledWith(
-      expect.stringContaining('You must always return at least 3 child features'),
+      expect.stringContaining('Return 2 to 5 child features'),
       expect.any(Object),
       'strong',
       expect.any(Object)
     );
     expect(executeSpy.mock.calls[0][0]).toContain('Do not return an empty array.');
-    expect(executeSpy.mock.calls[0][0]).toContain('The `tasks` array must contain 3 to 5 items.');
+    expect(executeSpy.mock.calls[0][0]).toContain('The `tasks` array must contain 2 to 5 items.');
     expect(executeSpy.mock.calls[0][0]).toContain('Use this visible issue title pattern exactly: "Epic / Spec NN: <Short Child Scope>"');
     expect(executeSpy.mock.calls[0][0]).toContain('ready to be stored under `specs/`');
     expect(executeSpy.mock.calls[0][0]).toContain('Do not merely restate or lightly rephrase the parent issue.');
+    expect(executeSpy.mock.calls[0][0]).toContain('Do not force artificial setup, verification, or cleanup tickets just to hit a target count.');
+    expect(executeSpy.mock.calls[0][0]).toContain('The child specs must be disjoint in primary ownership.');
     expect(executeSpy.mock.calls[0][0]).toContain('Each child spec must include binary acceptance criteria that can be judged as satisfied or not satisfied.');
     expect(executeSpy.mock.calls[0][0]).toContain('If a child spec includes conditional work, you must explicitly define the no-op condition.');
     expect(executeSpy.mock.calls[0][0]).toContain('Each `specMarkdown` must contain explicit verification expectations.');
@@ -101,6 +103,8 @@ describe('CodexRunner', () => {
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Resolved model: gpt-5-mini');
     expect(core.info).toHaveBeenCalledWith('[CodexRunner] Resolved sandbox: workspace-write');
     expect(executeSpy.mock.calls[0][0]).toContain('ready to be stored under `plans/`');
+    expect(executeSpy.mock.calls[0][0]).toContain('Do not ask clarifying questions.');
+    expect(executeSpy.mock.calls[0][0]).toContain('make the safest reasonable assumptions');
   });
 
   it('asks Codex to gather repository context itself for implementation', async () => {
@@ -110,7 +114,7 @@ describe('CodexRunner', () => {
         '{"status":"completed","summary":"Done","changedFiles":["src/foo.ts"],"acceptanceCriteria":[{"criterion":"Feature fully implemented","status":"satisfied","evidence":"All in-scope changes completed"}],"verification":[{"command":"npm test","status":"passed","details":"All required checks passed"}],"remainingWork":[],"blockers":[]}',
       items: [],
     });
-    const result = await runner.implementFeature('Feature', 'Spec body', '# Plan', 'strong');
+    const result = await runner.implementFeature('Feature', 'Spec body', '# Plan', 'broad-feature', 'strong');
 
     expect(result).toEqual({
       status: 'completed',
@@ -127,12 +131,45 @@ describe('CodexRunner', () => {
     expect(executeSpy.mock.calls[0][0]).toContain('# Plan');
     expect(executeSpy.mock.calls[0][0]).toContain('Implement the feature directly in the local repository');
     expect(executeSpy.mock.calls[0][0]).toContain('implement the full in-scope feature');
+    expect(executeSpy.mock.calls[0][0]).toContain('This is a broad feature run. Cover the primary implementation surface across multiple expected change areas');
+    expect(executeSpy.mock.calls[0][0]).toContain('A broad feature run must leave a visible implementation footprint across the main requested change areas.');
     expect(executeSpy.mock.calls[0][0]).toContain('A partial implementation is not a successful implementation.');
     expect(executeSpy.mock.calls[0][0]).toContain('Missing verification tools do not excuse skipping implementable code changes.');
+    expect(executeSpy.mock.calls[0][0]).toContain('Your `summary` and `changedFiles` must match the actual repository diff from this run.');
     expect(executeSpy.mock.calls[0][0]).toContain('You must complete all unblocked in-scope implementation work before returning `status` = `blocked`.');
     expect(executeSpy.mock.calls[0][0]).toContain('You must evaluate the acceptance criteria one by one before finishing.');
     expect(executeSpy.mock.calls[0][0]).toContain('- `status`: one of `completed`, `partial`, or `blocked`');
     expect(executeSpy.mock.calls[0][0]).toContain('- `acceptanceCriteria`: array of objects with `criterion`, `status`, and `evidence`');
+  });
+
+  it('uses a narrower implementation prompt for child specs', async () => {
+    const runner = new CodexRunner();
+    const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse:
+        '{"status":"completed","summary":"Done","changedFiles":["src/foo.ts"],"acceptanceCriteria":[{"criterion":"Feature fully implemented","status":"satisfied","evidence":"All in-scope changes completed"}],"verification":[{"command":"npm test","status":"passed","details":"All required checks passed"}],"remainingWork":[],"blockers":[]}',
+      items: [],
+    });
+
+    await runner.implementFeature('Epic / Spec 02: Child scope', 'Spec body', '# Plan', 'child-subtask', 'strong');
+
+    expect(executeSpy.mock.calls[0][0]).toContain('This is a scoped child task. Stay tightly within the explicit scope');
+    expect(executeSpy.mock.calls[0][0]).toContain('A subtask is not complete if it substitutes tests, notes, or audits for required production changes.');
+    expect(executeSpy.mock.calls[0][0]).toContain('A child subtask run must clearly touch the assigned ownership area named by the task.');
+  });
+
+  it('uses a focused implementation prompt for narrow features', async () => {
+    const runner = new CodexRunner();
+    const executeSpy = jest.spyOn(runner as any, 'executeStructuredTurn').mockResolvedValue({
+      finalResponse:
+        '{"status":"completed","summary":"Done","changedFiles":["src/foo.ts"],"acceptanceCriteria":[{"criterion":"Feature fully implemented","status":"satisfied","evidence":"All in-scope changes completed"}],"verification":[{"command":"npm test","status":"passed","details":"All required checks passed"}],"remainingWork":[],"blockers":[]}',
+      items: [],
+    });
+
+    await runner.implementFeature('Feature', 'Spec body', '# Plan', 'narrow-feature', 'strong');
+
+    expect(executeSpy.mock.calls[0][0]).toContain('This is a narrow feature run. Fully complete the primary implementation area and avoid drifting into unrelated scope.');
+    expect(executeSpy.mock.calls[0][0]).toContain('A narrow feature is not complete until its primary implementation area is actually finished in production code.');
+    expect(executeSpy.mock.calls[0][0]).toContain('A narrow feature run must clearly touch the primary feature area rather than only nearby support files.');
   });
 
   it('retries edit tasks once when Codex only returns agent messages without workspace activity', async () => {
@@ -156,7 +193,7 @@ describe('CodexRunner', () => {
         ],
       });
 
-    const result = await runner.implementFeature('Feature', 'Spec body', '# Plan', 'strong');
+    const result = await runner.implementFeature('Feature', 'Spec body', '# Plan', 'broad-feature', 'strong');
 
     expect(result).toEqual({
       status: 'completed',

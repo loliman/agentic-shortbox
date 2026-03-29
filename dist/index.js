@@ -32617,15 +32617,17 @@ class CodexRunner {
             featureTitle: title,
             featureSpec: body || 'No issue body provided.',
             commandInstruction: [
-                'Split this parent issue into 3 to 5 isolated child features.',
-                'You must always return at least 3 child features when the parent issue describes a software change request.',
+                'Split this parent issue into a small set of isolated child features.',
+                'Return 2 to 5 child features, choosing the smallest number that still covers the parent cleanly.',
                 'Do not return an empty array.',
-                'If the parent issue feels too small to split cleanly, decompose it into setup, implementation, and verification oriented child features anyway.',
+                'Do not force artificial setup, verification, or cleanup tickets just to hit a target count.',
                 'Each child feature must be independently implementable, independently reviewable, and narrow enough that a coding agent can complete it without inferring major missing scope from the parent.',
                 'Do not merely restate or lightly rephrase the parent issue.',
                 'Each child spec must specialize the parent into a concrete implementation slice with a clearly bounded purpose.',
-                'Each child spec must define a primary code area or responsibility.',
+                'Each child spec must define one primary code area or responsibility that it owns.',
                 'Each child spec must name the concrete files, routes, modules, or subsystems that are expected to change.',
+                'The child specs must be disjoint in primary ownership. Two child specs must not share the same primary entry point, route, module, or file family.',
+                'A testing-only child spec is valid only when testing is itself a merge-worthy deliverable with a clearly bounded implementation target.',
                 'Each child spec must include binary acceptance criteria that can be judged as satisfied or not satisfied.',
                 'Each child spec must include required verification expectations, such as specific commands, tests, or proof points.',
                 'Each child spec must clearly distinguish required work from conditional work and non-goals.',
@@ -32640,7 +32642,7 @@ class CodexRunner {
             ].join('\n'),
             outputContract: [
                 'Return a JSON object with a `tasks` array.',
-                'The `tasks` array must contain 3 to 5 items.',
+                'The `tasks` array must contain 2 to 5 items.',
                 'An empty `tasks` array is invalid.',
                 'Each item in `tasks` must include:',
                 '- `title`: string',
@@ -32678,35 +32680,32 @@ class CodexRunner {
             commandName: 'ready for planning',
             featureTitle: title,
             featureSpec: body || 'No issue body provided.',
-            commandInstruction: force
-                ? [
-                    'Create a complete implementation plan now.',
-                    'Read `plans/templates/implementation-plan.md` and follow its structure.',
-                    'Write the resulting markdown as a repository-governed artifact that is ready to be stored under `plans/` without further rewriting.',
-                    'Do not ask clarifying questions.',
-                ].join('\n')
-                : [
-                    'Decide whether the feature is specific enough to plan.',
-                    'If it is specific enough, create a complete implementation plan using `plans/templates/implementation-plan.md`.',
-                    'When you do create a plan, write it as a repository-governed artifact that is ready to be stored under `plans/` without further rewriting.',
-                    'If it is not specific enough, ask concise clarifying questions instead.',
-                ].join('\n'),
+            commandInstruction: [
+                'Create a complete implementation plan now.',
+                'Read `plans/templates/implementation-plan.md` and follow its structure.',
+                'Write the resulting markdown as a repository-governed artifact that is ready to be stored under `plans/` without further rewriting.',
+                'Do not ask clarifying questions.',
+                'If the spec is weak or ambiguous, make the safest reasonable assumptions, state them briefly in the plan, and still produce a usable execution plan.',
+            ].join('\n'),
             outputContract: [
                 'Return a JSON object with:',
-                '- `action`: either `plan` or `question`',
-                '- `content`: the markdown plan or the clarification questions',
+                '- `action`: `plan`',
+                '- `content`: the markdown implementation plan',
             ].join('\n'),
         }, {
             type: 'object',
             additionalProperties: false,
             required: ['action', 'content'],
             properties: {
-                action: { type: 'string', enum: ['plan', 'question'] },
+                action: { type: 'string', enum: ['plan'] },
                 content: { type: 'string' },
             },
         }, modelConf);
     }
-    async implementFeature(title, featureSpec, implementationPlan, modelConf = 'strong') {
+    async implementFeature(title, featureSpec, implementationPlan, runType, modelConf = 'strong') {
+        const subtaskMode = runType === 'child-subtask';
+        const broadFeatureMode = runType === 'broad-feature';
+        const narrowFeatureMode = runType === 'narrow-feature';
         return this.runStructuredTask({
             commandName: 'ready for implementation',
             featureTitle: title,
@@ -32716,14 +32715,27 @@ class CodexRunner {
                 'Implement the feature directly in the local repository.',
                 'You are responsible for gathering your own code context from the repository before editing anything.',
                 'Inspect the existing code, understand the relevant modules, and then implement the full in-scope feature.',
-                'Do not stop after the first valid improvement.',
-                'Do not intentionally narrow scope to a subset of the feature.',
+                subtaskMode
+                    ? 'This is a scoped child task. Stay tightly within the explicit scope and do not drift into sibling work unless it is a hard blocker.'
+                    : broadFeatureMode
+                        ? 'This is a broad feature run. Cover the primary implementation surface across multiple expected change areas and do not present a one-file slice as complete.'
+                        : 'This is a narrow feature run. Fully complete the primary implementation area and avoid drifting into unrelated scope.',
+                subtaskMode
+                    ? 'A subtask is not complete if it substitutes tests, notes, or audits for required production changes.'
+                    : broadFeatureMode
+                        ? 'Do not stop after the first valid improvement when higher-value in-scope work remains unimplemented.'
+                        : 'A narrow feature is not complete until its primary implementation area is actually finished in production code.',
                 'Make the smallest coherent set of code changes that fully satisfies the in-scope spec and plan.',
                 'Treat the feature spec as the source of truth for required scope.',
                 'Treat the implementation plan as the required execution outline unless repository reality forces a justified adjustment.',
                 'You must audit the repository against the feature spec and implementation plan before editing.',
                 'You must identify every in-scope file or module that still requires work.',
                 'You must implement all required in-scope changes, not just the easiest or safest subset.',
+                broadFeatureMode
+                    ? 'A broad feature run must leave a visible implementation footprint across the main requested change areas.'
+                    : narrowFeatureMode
+                        ? 'A narrow feature run must clearly touch the primary feature area rather than only nearby support files.'
+                        : 'A child subtask run must clearly touch the assigned ownership area named by the task.',
                 'You must run the relevant verification commands required by the spec and plan.',
                 'You must evaluate the acceptance criteria one by one before finishing.',
                 'Do not edit `specs/`, `plans/`, `docs/`, or `AGENTS.md` unless the feature explicitly requires it.',
@@ -32738,6 +32750,7 @@ class CodexRunner {
                 'Explicitly report the blocker and every remaining incomplete item.',
                 'Missing `eslint`, `jest`, dependencies, credentials, or other tooling is a blocker for completion if the spec requires those checks to pass.',
                 'Missing verification tools do not excuse skipping implementable code changes.',
+                'Your `summary` and `changedFiles` must match the actual repository diff from this run.',
                 'You must complete all unblocked in-scope implementation work before returning `status` = `blocked`.',
                 'If some code is implemented but the full feature is not complete, return `status` = `partial`.',
                 'Return `status` = `completed` only if all in-scope implementation work is done, all required acceptance criteria are satisfied, and all required verification steps were actually run successfully.',
@@ -33363,6 +33376,7 @@ const runner_1 = __nccwpck_require__(7159);
 const manager_1 = __nccwpck_require__(2881);
 const parser_1 = __nccwpck_require__(5392);
 const state_machine_1 = __nccwpck_require__(1290);
+const implementation_workflow_1 = __nccwpck_require__(2459);
 class MissingPlanError extends Error {
     constructor() {
         super('Cannot start implementation because no implementation plan exists yet.');
@@ -33397,9 +33411,8 @@ class BotController {
                     '**How to use me:**',
                     '1. Optionally apply `model:fast` or `model:strong` to this issue.',
                     '2. Type `ready for planning` in a comment to generate an implementation plan.',
-                    '3. Type `ready for planning without questions` if you want a forced plan with no clarification step.',
-                    '4. Type `ready for implementation` to let Codex work in the checked-out repository and open a Pull Request.',
-                    '5. Type `ready for breakdown` to let Codex split this epic into child specs.',
+                    '3. Type `ready for implementation` to let Codex work in the checked-out repository and open a Pull Request.',
+                    '4. Type `ready for breakdown` to let Codex split this epic into child specs.',
                 ].join('\n'),
                 'For every command, Codex is instructed to inspect and obey `AGENTS.md`, `docs/`, `plans/`, and `specs/` from the repository itself.',
                 '`ready for specification` remains supported as a compatibility alias for `ready for breakdown`.',
@@ -33525,23 +33538,15 @@ class BotController {
     async handlePlanning(payload, config, force) {
         await this.postStatus(payload.number, [
             '🤖 **Planning started**',
-            force
-                ? 'I am generating a full implementation plan without asking clarifying questions first.'
-                : 'I am reviewing the feature spec and deciding whether I can produce a full implementation plan or need clarification.',
+            'I am generating a full implementation plan directly from the issue spec.',
             'When a plan is generated, it is expected to be repo-ready markdown for `plans/`.',
         ].join('\n\n'));
         const issueData = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: payload.number });
         const agent = new runner_1.CodexRunner();
         const result = await agent.generateImplementationPlan(issueData.data.title, issueData.data.body, force, config.model);
-        if (result.action === 'question') {
-            await this.postStatus(payload.number, ['**Clarification Needed**', result.content].join('\n\n'));
-            await this.replaceStateLabel(payload.number, payload.labels, 'state:clarification_needed');
-        }
-        else {
-            await this.postStatus(payload.number, ['**Implementation Plan**', '_This plan is formatted as a repository-ready artifact for `plans/`._', result.content].join('\n\n'));
-            await this.postStatus(payload.number, this.buildPlanningNextStepsComment());
-            await this.replaceStateLabel(payload.number, payload.labels, 'state:planned');
-        }
+        await this.postStatus(payload.number, ['**Implementation Plan**', '_This plan is formatted as a repository-ready artifact for `plans/`._', result.content].join('\n\n'));
+        await this.postStatus(payload.number, this.buildPlanningNextStepsComment());
+        await this.replaceStateLabel(payload.number, payload.labels, 'state:planned');
     }
     // 5. IMPLEMENTATION
     async handleImplementation(payload, config) {
@@ -33557,11 +33562,12 @@ class BotController {
         const issueData = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: payload.number });
         const plan = await this.getLatestImplementationPlan(payload.number);
         const agent = new runner_1.CodexRunner();
+        const runType = (0, implementation_workflow_1.classifyImplementationRunType)(issueData.data.title || '', issueData.data.body || '', plan);
         const git = new manager_1.GitManager(process.env.GITHUB_TOKEN || '');
         const branchName = this.buildImplementationBranchName(payload.number, issueData.data.title || '');
         // Git checkouts locally
         await git.checkoutNewBranch(branchName);
-        const implementationResult = await agent.implementFeature(issueData.data.title || '', issueData.data.body || '', plan, config.model);
+        const implementationResult = await agent.implementFeature(issueData.data.title || '', issueData.data.body || '', plan, runType, config.model);
         if (implementationResult.status !== 'completed') {
             const incompleteCriteria = implementationResult.acceptanceCriteria
                 .filter((criterion) => criterion.status !== 'satisfied')
@@ -33581,7 +33587,21 @@ class BotController {
         if (!hasImplementationChanges) {
             throw new Error('Codex did not produce any working tree changes for this implementation. Aborting before creating a PR.');
         }
-        const persistedArtifacts = await this.persistContextArtifacts(git, payload.number, issueData.data.title || '', issueData.data.body || '', plan);
+        const assessment = (0, implementation_workflow_1.assessImplementationPublishability)({
+            title: issueData.data.title || '',
+            runType,
+            actualChangedFiles: await git.getWorkingTreeFiles(),
+            reportedChangedFiles: implementationResult.changedFiles,
+            verification: implementationResult.verification,
+            featureSpec: issueData.data.body || '',
+            implementationPlan: plan,
+        });
+        if (!assessment.publishable) {
+            throw new Error(assessment.reason || 'The implementation diff did not satisfy publishability checks.');
+        }
+        if (assessment.missingReportedFiles.length > 0) {
+            core.info(`[Bot] Codex reported changed files that are not present in the working tree diff: ${assessment.missingReportedFiles.join(', ')}`);
+        }
         await git.commitAndPush(`Fix #${payload.number}: Auto implementation`, branchName);
         // Create PR via Octokit
         const pr = await this.octokit.rest.pulls.create({
@@ -33600,12 +33620,8 @@ class BotController {
             `✅ **Code generated and pushed to PR #${pr.data.number}.**`,
             `**Branch:** \`${branchName}\``,
             implementationResult.summary,
-            implementationResult.changedFiles.length
-                ? ['**Updated files:**', implementationResult.changedFiles.map((filePath) => `- \`${filePath}\``).join('\n')].join('\n')
-                : '**Updated files:**\n- Codex did not report any changed files.',
-            persistedArtifacts.length
-                ? ['**Persisted artifacts:**', persistedArtifacts.map((filePath) => `- \`${filePath}\``).join('\n')].join('\n')
-                : null,
+            this.buildPublicationEvidenceSection(assessment.publicationEvidence),
+            this.buildUpdatedFilesSection(assessment.normalizedChangedFiles),
             'Go review it!',
         ].filter((section) => Boolean(section)).join('\n\n'));
         await this.replaceStateLabel(payload.number, payload.labels, 'state:in-review');
@@ -33741,6 +33757,17 @@ class BotController {
                 : null,
         ].filter((section) => Boolean(section)).join('\n\n');
     }
+    buildUpdatedFilesSection(changedFiles) {
+        return changedFiles.length
+            ? ['**Updated files:**', changedFiles.map((filePath) => `- \`${filePath}\``).join('\n')].join('\n')
+            : '**Updated files:**\n- No working tree files were detected.';
+    }
+    buildPublicationEvidenceSection(evidence) {
+        if (evidence.length === 0) {
+            return null;
+        }
+        return ['**Why this run qualified for publication:**', evidence.map((entry) => `- ${entry}`).join('\n')].join('\n');
+    }
     async fetchOpenReviewThreads(prNumber) {
         if (typeof this.octokit.graphql !== 'function') {
             return [];
@@ -33874,60 +33901,6 @@ class BotController {
             spec: issue.data.body || 'No linked issue specification found.',
             plan,
         };
-    }
-    async persistContextArtifacts(git, issueNumber, issueTitle, spec, plan) {
-        const operations = this.buildContextArtifactOperations(issueNumber, issueTitle, spec, plan);
-        if (operations.length === 0) {
-            return [];
-        }
-        const gitWithOptionalMissingWriter = git;
-        if (typeof gitWithOptionalMissingWriter.applyMissingFileSystemChanges === 'function') {
-            return gitWithOptionalMissingWriter.applyMissingFileSystemChanges(operations);
-        }
-        await git.applyFileSystemChanges(operations);
-        return operations.map((operation) => operation.path);
-    }
-    buildContextArtifactOperations(issueNumber, issueTitle, spec, plan) {
-        const baseName = this.buildArtifactBaseName(issueNumber, issueTitle);
-        const operations = [];
-        const normalizedSpec = spec.trim();
-        const normalizedPlan = this.normalizePlanArtifact(plan);
-        if (normalizedSpec) {
-            operations.push({
-                path: `specs/${baseName}.md`,
-                content: normalizedSpec.endsWith('\n') ? normalizedSpec : `${normalizedSpec}\n`,
-            });
-        }
-        if (normalizedPlan) {
-            operations.push({
-                path: `plans/${baseName}-plan.md`,
-                content: normalizedPlan.endsWith('\n') ? normalizedPlan : `${normalizedPlan}\n`,
-            });
-        }
-        return operations;
-    }
-    buildArtifactBaseName(issueNumber, issueTitle) {
-        const prefix = String(issueNumber).padStart(2, '0');
-        const slug = issueTitle
-            .toLowerCase()
-            .normalize('NFKD')
-            .replace(/[^\w\s-]/g, '')
-            .trim()
-            .replace(/[\s_]+/g, '-')
-            .replace(/-+/g, '-')
-            .replace(/^-|-$/g, '')
-            .slice(0, 64);
-        return `${prefix}-${slug || 'artifact'}`;
-    }
-    normalizePlanArtifact(plan) {
-        const trimmed = plan.trim();
-        if (!trimmed) {
-            return '';
-        }
-        return trimmed
-            .replace(/^\*\*Implementation Plan\*\*\s*/i, '')
-            .replace(/^_This plan is formatted as a repository-ready artifact for `plans\/`\._\s*/i, '')
-            .trim();
     }
     extractLinkedIssueNumber(text) {
         const match = text.match(/Issue\s+#(\d+)/i);
@@ -34098,6 +34071,13 @@ class GitManager {
         const result = await execAsync('git status --porcelain', { cwd: this.workspace });
         return result.stdout.trim().length > 0;
     }
+    async getWorkingTreeFiles() {
+        const result = await execAsync('git diff --name-only --diff-filter=ACMR HEAD --', { cwd: this.workspace });
+        return result.stdout
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0);
+    }
     async commitAndPush(message, branchName) {
         core.info(`[GitManager] Committing changes...`);
         await execAsync(`git add .`, { cwd: this.workspace });
@@ -34128,6 +34108,188 @@ exports.GitManager = GitManager;
 
 /***/ }),
 
+/***/ 2459:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.classifyImplementationRunType = classifyImplementationRunType;
+exports.assessImplementationPublishability = assessImplementationPublishability;
+function classifyImplementationRunType(title, featureSpec, implementationPlan) {
+    if (isChildSpecificationTitle(title)) {
+        return 'child-subtask';
+    }
+    return isBroadScope(featureSpec, implementationPlan) ? 'broad-feature' : 'narrow-feature';
+}
+function assessImplementationPublishability(input) {
+    const normalizedChangedFiles = normalizeChangedFiles(input.actualChangedFiles);
+    const missingReportedFiles = normalizeChangedFiles(input.reportedChangedFiles).filter((filePath) => !normalizedChangedFiles.includes(filePath));
+    const expectedSurface = buildExpectedSurface(input.title, input.featureSpec, input.implementationPlan);
+    if (normalizedChangedFiles.length === 0) {
+        return reject(input.runType, normalizedChangedFiles, missingReportedFiles, 'Codex reported a completed implementation, but no changed files were detected in the working tree.');
+    }
+    const meaningfulFiles = normalizedChangedFiles.filter((filePath) => !isGovernanceArtifactPath(filePath));
+    if (meaningfulFiles.length === 0) {
+        return reject(input.runType, normalizedChangedFiles, missingReportedFiles, `Codex changed only governance artifacts (${normalizedChangedFiles.join(', ')}). Aborting instead of opening a code PR with no implementation diff.`);
+    }
+    const failedVerification = input.verification.filter((entry) => entry.status !== 'passed');
+    if (failedVerification.length > 0) {
+        return reject(input.runType, normalizedChangedFiles, missingReportedFiles, `Codex marked the implementation as completed even though verification did not fully pass (${failedVerification
+            .map((entry) => `${entry.command}: ${entry.status}`)
+            .join('; ')}).`);
+    }
+    const productionFiles = meaningfulFiles.filter((filePath) => isProductionLikePath(filePath));
+    const productionExpected = expectsProductionChanges(input.featureSpec, input.implementationPlan);
+    if (productionExpected && productionFiles.length === 0) {
+        return reject(input.runType, normalizedChangedFiles, missingReportedFiles, `The spec and plan imply production code changes, but the observed diff only touched non-production files (${meaningfulFiles.join(', ')}).`);
+    }
+    const ownershipCoverage = countOwnershipMatches(productionFiles, expectedSurface.ownershipHints);
+    if (input.runType === 'child-subtask' && expectedSurface.ownershipHints.length > 0 && ownershipCoverage === 0) {
+        return reject(input.runType, normalizedChangedFiles, missingReportedFiles, `The child subtask did not touch its expected ownership area. Expected one of [${expectedSurface.ownershipHints.join(', ')}], observed production files: ${productionFiles.join(', ')}.`);
+    }
+    if (input.runType === 'narrow-feature' && expectedSurface.ownershipHints.length > 0 && ownershipCoverage === 0) {
+        return reject(input.runType, normalizedChangedFiles, missingReportedFiles, `The implementation diff does not align with the expected primary feature area [${expectedSurface.ownershipHints.join(', ')}]. Observed production files: ${productionFiles.join(', ')}.`);
+    }
+    if (input.runType === 'broad-feature') {
+        if (productionFiles.length < 2) {
+            return reject(input.runType, normalizedChangedFiles, missingReportedFiles, `The issue appears broad, but the observed implementation diff is too small to publish confidently (${productionFiles.join(', ') || meaningfulFiles.join(', ')}).`);
+        }
+        const coveredFamilies = countDistinctFileFamilies(productionFiles);
+        if (coveredFamilies < 2) {
+            return reject(input.runType, normalizedChangedFiles, missingReportedFiles, `The issue appears broad, but the observed production changes are concentrated in only one file family (${productionFiles.join(', ')}).`);
+        }
+    }
+    return {
+        publishable: true,
+        runType: input.runType,
+        normalizedChangedFiles,
+        missingReportedFiles,
+        publicationEvidence: buildPublicationEvidence(input.runType, productionFiles, expectedSurface, input.verification, ownershipCoverage),
+    };
+}
+function reject(runType, normalizedChangedFiles, missingReportedFiles, reason) {
+    return {
+        publishable: false,
+        runType,
+        normalizedChangedFiles,
+        missingReportedFiles,
+        reason,
+        publicationEvidence: [],
+    };
+}
+function buildPublicationEvidence(runType, productionFiles, expectedSurface, verification, ownershipCoverage) {
+    const evidence = [
+        `Run type: ${runType}`,
+        `Production files changed: ${productionFiles.length}`,
+        `Verification passed: ${verification.map((entry) => entry.command).join(', ') || 'none recorded'}`,
+    ];
+    if (expectedSurface.affectedAreas.length > 0) {
+        evidence.push(`Affected areas referenced: ${expectedSurface.affectedAreas.join(', ')}`);
+    }
+    if (expectedSurface.ownershipHints.length > 0) {
+        evidence.push(`Ownership-aligned files: ${ownershipCoverage}/${productionFiles.length}`);
+    }
+    return evidence;
+}
+function buildExpectedSurface(title, featureSpec, implementationPlan) {
+    const affectedAreas = extractListItems(extractSection(featureSpec, 'Affected Areas'));
+    const affectedFiles = extractListItems(extractSection(implementationPlan, 'Affected Files')).map(stripMarkdownCodeFence);
+    const ownershipHints = normalizeOwnershipHints([
+        ...extractTitleOwnershipHints(title),
+        ...affectedAreas,
+        ...affectedFiles,
+    ]);
+    return { ownershipHints, affectedAreas, affectedFiles };
+}
+function extractTitleOwnershipHints(title) {
+    const childTitleMatch = title.match(/\/\s*Spec\s+\d{2}\s*:\s*(.+)$/i);
+    const source = childTitleMatch?.[1] || title;
+    return source
+        .split(/[^a-z0-9]+/i)
+        .map((part) => part.trim().toLowerCase())
+        .filter((part) => part.length >= 4);
+}
+function normalizeOwnershipHints(values) {
+    const expanded = values.flatMap((value) => value.split(/[^a-z0-9/._-]+/i));
+    return [...new Set(expanded.map((value) => value.trim().toLowerCase()).filter((value) => value.length >= 4))];
+}
+function countOwnershipMatches(files, ownershipHints) {
+    if (ownershipHints.length === 0) {
+        return 0;
+    }
+    return files.filter((filePath) => ownershipHints.some((hint) => filePath.toLowerCase().includes(hint))).length;
+}
+function normalizeChangedFiles(changedFiles) {
+    return [...new Set(changedFiles.map((filePath) => filePath.trim()).filter(Boolean))];
+}
+function isChildSpecificationTitle(title) {
+    return /\/\s*Spec\s+\d{2}\s*:/i.test(title);
+}
+function isGovernanceArtifactPath(filePath) {
+    return filePath.startsWith('specs/') || filePath.startsWith('plans/');
+}
+function isProductionLikePath(filePath) {
+    if (isGovernanceArtifactPath(filePath)) {
+        return false;
+    }
+    if (filePath.startsWith('docs/') || filePath === 'README.md' || filePath === 'AGENTS.md') {
+        return false;
+    }
+    if (filePath.includes('__tests__/') || filePath.includes('/tests/') || /\.(test|spec)\.[cm]?[jt]sx?$/.test(filePath)) {
+        return false;
+    }
+    return true;
+}
+function expectsProductionChanges(featureSpec, implementationPlan) {
+    const context = `${featureSpec}\n${implementationPlan}`.toLowerCase();
+    if (!context.trim()) {
+        return true;
+    }
+    if (/\bdocumentation-only\b|\bdocs only\b|\breadme only\b/.test(context)) {
+        return false;
+    }
+    return /\b(route|api|controller|service|component|module|workflow|state machine|parser|implementation|code|bot|git|src\/|app\/)\b/.test(context);
+}
+function isBroadScope(featureSpec, implementationPlan) {
+    return (countListItems(extractSection(featureSpec, 'Affected Areas')) >= 2 ||
+        countListItems(extractSection(implementationPlan, 'Affected Files')) >= 3);
+}
+function countDistinctFileFamilies(filePaths) {
+    const families = filePaths.map((filePath) => {
+        const parts = filePath.split('/');
+        if (parts.length >= 2) {
+            return `${parts[0]}/${parts[1]}`;
+        }
+        return parts[0];
+    });
+    return new Set(families).size;
+}
+function extractSection(markdown, heading) {
+    const pattern = new RegExp(`##\\s+${escapeRegExp(heading)}\\s*\\n([\\s\\S]*?)(?=\\n##\\s+|$)`, 'i');
+    const match = markdown.match(pattern);
+    return match?.[1] || '';
+}
+function countListItems(section) {
+    return extractListItems(section).length;
+}
+function extractListItems(section) {
+    return section
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => /^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line))
+        .map((line) => line.replace(/^[-*]\s+/, '').replace(/^\d+\.\s+/, '').trim());
+}
+function stripMarkdownCodeFence(value) {
+    return value.replace(/`/g, '').trim();
+}
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+
+/***/ }),
+
 /***/ 5392:
 /***/ ((__unused_webpack_module, exports) => {
 
@@ -34147,7 +34309,7 @@ function parseCommand(text) {
         return { type: 'define' };
     }
     if (normalized === 'ready for planning') {
-        return { type: 'plan', force: false };
+        return { type: 'plan', force: true };
     }
     if (normalized === 'ready for planning without questions') {
         return { type: 'plan', force: true };
@@ -34170,7 +34332,7 @@ function suggestCommand(text) {
         return null;
     }
     if (normalized === 'ready for planning!') {
-        return 'Use `ready for planning without questions` if you want to skip clarification.';
+        return 'Use `ready for planning`.';
     }
     if (normalized.includes('ready to plan') || normalized.includes('ready to planning')) {
         return 'Did you mean `ready for planning`?';
@@ -34188,7 +34350,7 @@ function suggestCommand(text) {
         return 'Add the instruction in the same comment, for example `ready for refinement make the bot tone warmer`.';
     }
     if (normalized.startsWith('ready')) {
-        return 'Unknown command. Supported commands are `ready for breakdown` (alias: `ready for specification`), `ready for planning`, `ready for planning without questions`, `ready for implementation`, `ready for rework`, and `ready for refinement <instruction>`.';
+        return 'Unknown command. Supported commands are `ready for breakdown` (alias: `ready for specification`), `ready for planning`, `ready for implementation`, `ready for rework`, and `ready for refinement <instruction>`.';
     }
     return null;
 }

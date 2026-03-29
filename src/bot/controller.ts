@@ -4,6 +4,7 @@ import { GitManager } from './git/manager';
 import { parseCommand, parseConfiguration, suggestCommand } from '../core/parser';
 import { extractCurrentState, evaluateTransition, IllegalTransitionError } from '../core/state-machine';
 import type { CodexEditResult } from './codex/runner';
+import { assessImplementationPublishability, classifyImplementationRunType } from '../core/implementation-workflow';
 
 class MissingPlanError extends Error {
   constructor() {
@@ -77,9 +78,8 @@ export class BotController {
             '**How to use me:**',
             '1. Optionally apply `model:fast` or `model:strong` to this issue.',
             '2. Type `ready for planning` in a comment to generate an implementation plan.',
-            '3. Type `ready for planning without questions` if you want a forced plan with no clarification step.',
-            '4. Type `ready for implementation` to let Codex work in the checked-out repository and open a Pull Request.',
-            '5. Type `ready for breakdown` to let Codex split this epic into child specs.',
+            '3. Type `ready for implementation` to let Codex work in the checked-out repository and open a Pull Request.',
+            '4. Type `ready for breakdown` to let Codex split this epic into child specs.',
           ].join('\n'),
           'For every command, Codex is instructed to inspect and obey `AGENTS.md`, `docs/`, `plans/`, and `specs/` from the repository itself.',
           '`ready for specification` remains supported as a compatibility alias for `ready for breakdown`.',
@@ -220,9 +220,7 @@ export class BotController {
       payload.number,
       [
         '🤖 **Planning started**',
-        force
-          ? 'I am generating a full implementation plan without asking clarifying questions first.'
-          : 'I am reviewing the feature spec and deciding whether I can produce a full implementation plan or need clarification.',
+        'I am generating a full implementation plan directly from the issue spec.',
         'When a plan is generated, it is expected to be repo-ready markdown for `plans/`.',
       ].join('\n\n')
     );
@@ -231,17 +229,12 @@ export class BotController {
     const agent = new CodexRunner();
     const result = await agent.generateImplementationPlan(issueData.data.title, issueData.data.body, force, config.model);
 
-    if (result.action === 'question') {
-      await this.postStatus(payload.number, ['**Clarification Needed**', result.content].join('\n\n'));
-      await this.replaceStateLabel(payload.number, payload.labels, 'state:clarification_needed');
-    } else {
-      await this.postStatus(
-        payload.number,
-        ['**Implementation Plan**', '_This plan is formatted as a repository-ready artifact for `plans/`._', result.content].join('\n\n')
-      );
-      await this.postStatus(payload.number, this.buildPlanningNextStepsComment());
-      await this.replaceStateLabel(payload.number, payload.labels, 'state:planned');
-    }
+    await this.postStatus(
+      payload.number,
+      ['**Implementation Plan**', '_This plan is formatted as a repository-ready artifact for `plans/`._', result.content].join('\n\n')
+    );
+    await this.postStatus(payload.number, this.buildPlanningNextStepsComment());
+    await this.replaceStateLabel(payload.number, payload.labels, 'state:planned');
   }
 
   // 5. IMPLEMENTATION
@@ -263,6 +256,7 @@ export class BotController {
     const issueData = await this.octokit.rest.issues.get({ ...this.ctx, issue_number: payload.number });
     const plan = await this.getLatestImplementationPlan(payload.number);
     const agent = new CodexRunner();
+    const runType = classifyImplementationRunType(issueData.data.title || '', issueData.data.body || '', plan);
     
     const git = new GitManager(process.env.GITHUB_TOKEN || '');
     const branchName = this.buildImplementationBranchName(payload.number, issueData.data.title || '');
@@ -273,6 +267,7 @@ export class BotController {
       issueData.data.title || '',
       issueData.data.body || '',
       plan,
+      runType,
       config.model
     );
     if (implementationResult.status !== 'completed') {
@@ -294,13 +289,23 @@ export class BotController {
     if (!hasImplementationChanges) {
       throw new Error('Codex did not produce any working tree changes for this implementation. Aborting before creating a PR.');
     }
-    const persistedArtifacts = await this.persistContextArtifacts(
-      git,
-      payload.number,
-      issueData.data.title || '',
-      issueData.data.body || '',
-      plan
-    );
+    const assessment = assessImplementationPublishability({
+      title: issueData.data.title || '',
+      runType,
+      actualChangedFiles: await git.getWorkingTreeFiles(),
+      reportedChangedFiles: implementationResult.changedFiles,
+      verification: implementationResult.verification,
+      featureSpec: issueData.data.body || '',
+      implementationPlan: plan,
+    });
+    if (!assessment.publishable) {
+      throw new Error(assessment.reason || 'The implementation diff did not satisfy publishability checks.');
+    }
+    if (assessment.missingReportedFiles.length > 0) {
+      core.info(
+        `[Bot] Codex reported changed files that are not present in the working tree diff: ${assessment.missingReportedFiles.join(', ')}`
+      );
+    }
     await git.commitAndPush(`Fix #${payload.number}: Auto implementation`, branchName);
 
     // Create PR via Octokit
@@ -323,12 +328,8 @@ export class BotController {
         `✅ **Code generated and pushed to PR #${pr.data.number}.**`,
         `**Branch:** \`${branchName}\``,
         implementationResult.summary,
-        implementationResult.changedFiles.length
-          ? ['**Updated files:**', implementationResult.changedFiles.map((filePath) => `- \`${filePath}\``).join('\n')].join('\n')
-          : '**Updated files:**\n- Codex did not report any changed files.',
-        persistedArtifacts.length
-          ? ['**Persisted artifacts:**', persistedArtifacts.map((filePath) => `- \`${filePath}\``).join('\n')].join('\n')
-          : null,
+        this.buildPublicationEvidenceSection(assessment.publicationEvidence),
+        this.buildUpdatedFilesSection(assessment.normalizedChangedFiles),
         'Go review it!',
       ].filter((section): section is string => Boolean(section)).join('\n\n')
     );
@@ -524,6 +525,20 @@ export class BotController {
     ].filter((section): section is string => Boolean(section)).join('\n\n');
   }
 
+  private buildUpdatedFilesSection(changedFiles: string[]) {
+    return changedFiles.length
+      ? ['**Updated files:**', changedFiles.map((filePath) => `- \`${filePath}\``).join('\n')].join('\n')
+      : '**Updated files:**\n- No working tree files were detected.';
+  }
+
+  private buildPublicationEvidenceSection(evidence: string[]) {
+    if (evidence.length === 0) {
+      return null;
+    }
+
+    return ['**Why this run qualified for publication:**', evidence.map((entry) => `- ${entry}`).join('\n')].join('\n');
+  }
+
   private async fetchOpenReviewThreads(prNumber: number) {
     if (typeof this.octokit.graphql !== 'function') {
       return [];
@@ -679,80 +694,6 @@ export class BotController {
       spec: issue.data.body || 'No linked issue specification found.',
       plan,
     };
-  }
-
-  private async persistContextArtifacts(
-    git: GitManager,
-    issueNumber: number,
-    issueTitle: string,
-    spec: string,
-    plan: string
-  ): Promise<string[]> {
-    const operations = this.buildContextArtifactOperations(issueNumber, issueTitle, spec, plan);
-    if (operations.length === 0) {
-      return [];
-    }
-
-    const gitWithOptionalMissingWriter = git as GitManager & {
-      applyMissingFileSystemChanges?: (operations: { path: string; content: string }[]) => Promise<string[]>;
-    };
-
-    if (typeof gitWithOptionalMissingWriter.applyMissingFileSystemChanges === 'function') {
-      return gitWithOptionalMissingWriter.applyMissingFileSystemChanges(operations);
-    }
-
-    await git.applyFileSystemChanges(operations);
-    return operations.map((operation) => operation.path);
-  }
-
-  private buildContextArtifactOperations(issueNumber: number, issueTitle: string, spec: string, plan: string) {
-    const baseName = this.buildArtifactBaseName(issueNumber, issueTitle);
-    const operations: Array<{ path: string; content: string }> = [];
-    const normalizedSpec = spec.trim();
-    const normalizedPlan = this.normalizePlanArtifact(plan);
-
-    if (normalizedSpec) {
-      operations.push({
-        path: `specs/${baseName}.md`,
-        content: normalizedSpec.endsWith('\n') ? normalizedSpec : `${normalizedSpec}\n`,
-      });
-    }
-
-    if (normalizedPlan) {
-      operations.push({
-        path: `plans/${baseName}-plan.md`,
-        content: normalizedPlan.endsWith('\n') ? normalizedPlan : `${normalizedPlan}\n`,
-      });
-    }
-
-    return operations;
-  }
-
-  private buildArtifactBaseName(issueNumber: number, issueTitle: string) {
-    const prefix = String(issueNumber).padStart(2, '0');
-    const slug = issueTitle
-      .toLowerCase()
-      .normalize('NFKD')
-      .replace(/[^\w\s-]/g, '')
-      .trim()
-      .replace(/[\s_]+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 64);
-
-    return `${prefix}-${slug || 'artifact'}`;
-  }
-
-  private normalizePlanArtifact(plan: string) {
-    const trimmed = plan.trim();
-    if (!trimmed) {
-      return '';
-    }
-
-    return trimmed
-      .replace(/^\*\*Implementation Plan\*\*\s*/i, '')
-      .replace(/^_This plan is formatted as a repository-ready artifact for `plans\/`\._\s*/i, '')
-      .trim();
   }
 
   private extractLinkedIssueNumber(text: string) {

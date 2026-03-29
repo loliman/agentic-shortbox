@@ -5,9 +5,9 @@ This document defines the project-local module boundaries for the GitHub-native 
 ## Boundaries
 - `.github/workflows/`: GitHub event wiring only. No bot logic, no LLM logic.
 - `src/github/action.ts`: Action entrypoint. Parse GitHub event shape, gather labels/comment metadata, delegate to `BotController`.
-- `src/core/`: Pure domain logic. Command parsing and workflow-state validation only. No network, filesystem, or git side effects.
-- `src/bot/controller.ts`: Workflow coordinator. Owns the high-level sequencing for welcome, specification, planning, implementation, and PR fix flows.
-- `src/bot/llm/`: Model-facing prompt and client logic.
+- `src/core/`: Pure domain logic. Command parsing, workflow-state validation, and implementation publication-confidence rules only. No network, filesystem, or git side effects.
+- `src/bot/controller.ts`: Workflow coordinator. Owns the high-level sequencing for welcome, specification, planning, implementation, and PR fix flows, and performs side-effectful publication decisions using pure core helpers.
+- `src/bot/codex/`: Model-facing prompt and execution logic.
 - `src/bot/git/manager.ts`: Exclusive boundary for local git and filesystem mutation performed as part of bot execution.
 - `src/bot/provider/`: Provider-specific integration helpers. GitHub-specific API shaping belongs here, not in `src/core/`.
 
@@ -21,3 +21,5 @@ This document defines the project-local module boundaries for the GitHub-native 
 - `src/core/` must stay deterministic and unit-testable.
 - GitHub-specific payloads or Octokit response shapes must not leak into `src/core/`.
 - The controller must not bypass `GitManager` for repository mutations.
+- Publication-confidence heuristics should live in `src/core/`, not be embedded directly into GitHub-side effects.
+- Prompt behavior for broad features, narrow features, and child subtasks should be driven by explicit run-type semantics rather than ad hoc string matching inside the controller.

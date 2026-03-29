@@ -81,6 +81,14 @@ export class GitManager {
     return result.stdout.trim().length > 0;
   }
 
+  async getWorkingTreeFiles(): Promise<string[]> {
+    const result = await execAsync('git diff --name-only --diff-filter=ACMR HEAD --', { cwd: this.workspace });
+    return result.stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
+
   async commitAndPush(message: string, branchName: string): Promise<boolean> {
     core.info(`[GitManager] Committing changes...`);
     await execAsync(`git add .`, { cwd: this.workspace });

@@ -9,9 +9,10 @@ Running AI scripts ad-hoc creates unpredictable git states and untrackable archi
 ## Decision
 The core execution engine is orchestrated primarily via explicit GitHub triggers:
 - Labels (e.g., `agent:codex`, `model:strong`)
-- Comments (`ready for specification`, `ready for planning`, `ready for implementation`)
+- Comments (`ready for specification` / `ready for breakdown`, `ready for planning`, `ready for implementation`)
 
 Planning and implementation remain distinct, explicit, tracked phases.
+Planning is non-dialog by default, and implementation PR publication is gated by observable repository evidence rather than model self-report alone.
 
 ## Consequences
 - **Positive:** Understandable workflow, auditable actions, explicit human approval gating.

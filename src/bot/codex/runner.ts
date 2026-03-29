@@ -4,6 +4,7 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import * as core from '@actions/core';
 import { Codex } from '../../../node_modules/@openai/codex-sdk/dist/index.js';
+import type { ImplementationRunType } from '../../core/implementation-workflow';
 
 const DEFAULT_OPENAI_BASE_URL = 'https://adesso-ai-hub.3asabc.de/v1';
 const CODEX_NPM_VERSION = '0.117.0';
@@ -18,7 +19,7 @@ interface EpicSplitResult {
 }
 
 export interface PlanResult {
-  action: 'plan' | 'question';
+  action: 'plan';
   content: string;
 }
 
@@ -71,15 +72,17 @@ export class CodexRunner {
         featureTitle: title,
         featureSpec: body || 'No issue body provided.',
         commandInstruction: [
-          'Split this parent issue into 3 to 5 isolated child features.',
-          'You must always return at least 3 child features when the parent issue describes a software change request.',
+          'Split this parent issue into a small set of isolated child features.',
+          'Return 2 to 5 child features, choosing the smallest number that still covers the parent cleanly.',
           'Do not return an empty array.',
-          'If the parent issue feels too small to split cleanly, decompose it into setup, implementation, and verification oriented child features anyway.',
+          'Do not force artificial setup, verification, or cleanup tickets just to hit a target count.',
           'Each child feature must be independently implementable, independently reviewable, and narrow enough that a coding agent can complete it without inferring major missing scope from the parent.',
           'Do not merely restate or lightly rephrase the parent issue.',
           'Each child spec must specialize the parent into a concrete implementation slice with a clearly bounded purpose.',
-          'Each child spec must define a primary code area or responsibility.',
+          'Each child spec must define one primary code area or responsibility that it owns.',
           'Each child spec must name the concrete files, routes, modules, or subsystems that are expected to change.',
+          'The child specs must be disjoint in primary ownership. Two child specs must not share the same primary entry point, route, module, or file family.',
+          'A testing-only child spec is valid only when testing is itself a merge-worthy deliverable with a clearly bounded implementation target.',
           'Each child spec must include binary acceptance criteria that can be judged as satisfied or not satisfied.',
           'Each child spec must include required verification expectations, such as specific commands, tests, or proof points.',
           'Each child spec must clearly distinguish required work from conditional work and non-goals.',
@@ -94,7 +97,7 @@ export class CodexRunner {
         ].join('\n'),
         outputContract: [
           'Return a JSON object with a `tasks` array.',
-          'The `tasks` array must contain 3 to 5 items.',
+          'The `tasks` array must contain 2 to 5 items.',
           'An empty `tasks` array is invalid.',
           'Each item in `tasks` must include:',
           '- `title`: string',
@@ -138,23 +141,17 @@ export class CodexRunner {
         commandName: 'ready for planning',
         featureTitle: title,
         featureSpec: body || 'No issue body provided.',
-        commandInstruction: force
-          ? [
-              'Create a complete implementation plan now.',
-              'Read `plans/templates/implementation-plan.md` and follow its structure.',
-              'Write the resulting markdown as a repository-governed artifact that is ready to be stored under `plans/` without further rewriting.',
-              'Do not ask clarifying questions.',
-            ].join('\n')
-          : [
-              'Decide whether the feature is specific enough to plan.',
-              'If it is specific enough, create a complete implementation plan using `plans/templates/implementation-plan.md`.',
-              'When you do create a plan, write it as a repository-governed artifact that is ready to be stored under `plans/` without further rewriting.',
-              'If it is not specific enough, ask concise clarifying questions instead.',
-            ].join('\n'),
+        commandInstruction: [
+          'Create a complete implementation plan now.',
+          'Read `plans/templates/implementation-plan.md` and follow its structure.',
+          'Write the resulting markdown as a repository-governed artifact that is ready to be stored under `plans/` without further rewriting.',
+          'Do not ask clarifying questions.',
+          'If the spec is weak or ambiguous, make the safest reasonable assumptions, state them briefly in the plan, and still produce a usable execution plan.',
+        ].join('\n'),
         outputContract: [
           'Return a JSON object with:',
-          '- `action`: either `plan` or `question`',
-          '- `content`: the markdown plan or the clarification questions',
+          '- `action`: `plan`',
+          '- `content`: the markdown implementation plan',
         ].join('\n'),
       },
       {
@@ -162,7 +159,7 @@ export class CodexRunner {
         additionalProperties: false,
         required: ['action', 'content'],
         properties: {
-          action: { type: 'string', enum: ['plan', 'question'] },
+          action: { type: 'string', enum: ['plan'] },
           content: { type: 'string' },
         },
       },
@@ -170,7 +167,17 @@ export class CodexRunner {
     );
   }
 
-  async implementFeature(title: string, featureSpec: string, implementationPlan: string, modelConf: string = 'strong'): Promise<CodexEditResult> {
+  async implementFeature(
+    title: string,
+    featureSpec: string,
+    implementationPlan: string,
+    runType: ImplementationRunType,
+    modelConf: string = 'strong'
+  ): Promise<CodexEditResult> {
+    const subtaskMode = runType === 'child-subtask';
+    const broadFeatureMode = runType === 'broad-feature';
+    const narrowFeatureMode = runType === 'narrow-feature';
+
     return this.runStructuredTask<CodexEditResult>(
       {
         commandName: 'ready for implementation',
@@ -181,14 +188,27 @@ export class CodexRunner {
           'Implement the feature directly in the local repository.',
           'You are responsible for gathering your own code context from the repository before editing anything.',
           'Inspect the existing code, understand the relevant modules, and then implement the full in-scope feature.',
-          'Do not stop after the first valid improvement.',
-          'Do not intentionally narrow scope to a subset of the feature.',
+          subtaskMode
+            ? 'This is a scoped child task. Stay tightly within the explicit scope and do not drift into sibling work unless it is a hard blocker.'
+            : broadFeatureMode
+              ? 'This is a broad feature run. Cover the primary implementation surface across multiple expected change areas and do not present a one-file slice as complete.'
+              : 'This is a narrow feature run. Fully complete the primary implementation area and avoid drifting into unrelated scope.',
+          subtaskMode
+            ? 'A subtask is not complete if it substitutes tests, notes, or audits for required production changes.'
+            : broadFeatureMode
+              ? 'Do not stop after the first valid improvement when higher-value in-scope work remains unimplemented.'
+              : 'A narrow feature is not complete until its primary implementation area is actually finished in production code.',
           'Make the smallest coherent set of code changes that fully satisfies the in-scope spec and plan.',
           'Treat the feature spec as the source of truth for required scope.',
           'Treat the implementation plan as the required execution outline unless repository reality forces a justified adjustment.',
           'You must audit the repository against the feature spec and implementation plan before editing.',
           'You must identify every in-scope file or module that still requires work.',
           'You must implement all required in-scope changes, not just the easiest or safest subset.',
+          broadFeatureMode
+            ? 'A broad feature run must leave a visible implementation footprint across the main requested change areas.'
+            : narrowFeatureMode
+              ? 'A narrow feature run must clearly touch the primary feature area rather than only nearby support files.'
+              : 'A child subtask run must clearly touch the assigned ownership area named by the task.',
           'You must run the relevant verification commands required by the spec and plan.',
           'You must evaluate the acceptance criteria one by one before finishing.',
           'Do not edit `specs/`, `plans/`, `docs/`, or `AGENTS.md` unless the feature explicitly requires it.',
@@ -203,6 +223,7 @@ export class CodexRunner {
           'Explicitly report the blocker and every remaining incomplete item.',
           'Missing `eslint`, `jest`, dependencies, credentials, or other tooling is a blocker for completion if the spec requires those checks to pass.',
           'Missing verification tools do not excuse skipping implementable code changes.',
+          'Your `summary` and `changedFiles` must match the actual repository diff from this run.',
           'You must complete all unblocked in-scope implementation work before returning `status` = `blocked`.',
           'If some code is implemented but the full feature is not complete, return `status` = `partial`.',
           'Return `status` = `completed` only if all in-scope implementation work is done, all required acceptance criteria are satisfied, and all required verification steps were actually run successfully.',

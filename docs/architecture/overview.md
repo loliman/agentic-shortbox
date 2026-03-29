@@ -10,9 +10,10 @@ The GitHub Action is the stateless edge of the system.
 
 ## 2. Core Workflow Guard
 Pure workflow validation lives in `src/core/`.
-- **Parser**: Recognizes explicit commands such as `ready for specification`, `ready for planning`, `ready for implementation`, PR rework via `ready for rework`, and PR refinement via `ready for refinement <instruction>`.
+- **Parser**: Recognizes explicit commands such as `ready for specification` / `ready for breakdown`, `ready for planning`, `ready for implementation`, PR rework via `ready for rework`, and PR refinement via `ready for refinement <instruction>`.
 - **Configuration extraction**: Reads `agent:*` and `model:*` labels as configuration only.
 - **State machine**: Validates legal state transitions before expensive work begins.
+- **Implementation publishability logic**: Pure run-type classification and publication-confidence rules live in `src/core/implementation-workflow.ts`.
 
 ## 3. Bot Controller
 The stateful bot logic lives in `src/bot/`.
@@ -22,13 +23,21 @@ The stateful bot logic lives in `src/bot/`.
   - `git/manager.ts` for local git and filesystem operations
   - `provider/github.ts` and Octokit integrations for comments, labels, issues, and PRs
 - **Execution model**: The controller operates directly on the runner's local workspace instead of dispatching to an external worker or webhook service. It passes the feature spec, latest plan, and command instruction to Codex, and Codex gathers the rest of its context from the repository on its own.
+- **Publication model**: Implementation PR creation is gated by observable evidence. The controller uses git-observed files, verification outcomes, and pure scope-confidence rules before publishing a PR.
 
 ## 4. Git and Repository Operations
 Git operations are performed locally through `src/bot/git/manager.ts`.
 - Branch creation, file application, commits, and pushes must go through the manager.
 - The controller should avoid ad hoc shell-level git logic outside this boundary.
 
-## 5. Configuration Sources
+## 5. Non-Dialog Delivery Model
+Planning and delivery are intentionally non-dialog in the normal workflow.
+- `ready for planning` produces a plan artifact directly.
+- `ready for implementation` executes or fails; it does not open a clarification loop.
+- `ready for rework` and `ready for refinement` apply edits or fail clearly.
+- Broad features, narrow features, and child subtasks use different publication thresholds.
+
+## 6. Configuration Sources
 - GitHub labels provide per-issue configuration.
 - GitHub Actions secrets provide runtime credentials such as `GITHUB_TOKEN` and `OPENAI_API_KEY`.
 - Governance context comes from repository files such as `AGENTS.md`, `docs/`, `specs/`, and `plans/`, which Codex is instructed to inspect directly.

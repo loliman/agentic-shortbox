@@ -109,6 +109,9 @@ describe('BotController', () => {
       body: expect.stringContaining('🤖 **Planning started**'),
     }));
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.stringContaining('generating a full implementation plan directly from the issue spec'),
+    }));
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 10,
       body: expect.stringContaining('**What you can do next**'),
     }));
@@ -186,7 +189,7 @@ describe('BotController', () => {
       implementFeature: jest.fn().mockResolvedValue({
         status: 'completed',
         summary: 'Implemented the feature in the local repository.',
-        changedFiles: ['src/foo.ts'],
+        changedFiles: ['src/test.ts'],
         acceptanceCriteria: [],
         verification: [],
         remainingWork: [],
@@ -196,8 +199,8 @@ describe('BotController', () => {
 
     const mockGit = {
       checkoutNewBranch: jest.fn(),
-      applyMissingFileSystemChanges: jest.fn().mockResolvedValue(['specs/07-test.md', 'plans/07-test-plan.md']),
       hasWorkingTreeChanges: jest.fn().mockResolvedValue(true),
+      getWorkingTreeFiles: jest.fn().mockResolvedValue(['src/test.ts']),
       commitAndPush: jest.fn().mockResolvedValue(true),
     };
     (GitManager as jest.Mock).mockImplementation(() => mockGit);
@@ -214,12 +217,15 @@ describe('BotController', () => {
     });
 
     const runner = (CodexRunner as jest.Mock).mock.results.at(-1)?.value;
-    expect(runner.implementFeature).toHaveBeenCalledWith('Test', 'Body', '**Implementation Plan**\n\n# Plan', 'strong');
+    expect(runner.implementFeature).toHaveBeenCalledWith(
+      'Test',
+      'Body',
+      '**Implementation Plan**\n\n# Plan',
+      'narrow-feature',
+      'strong'
+    );
     expect(mockGit.checkoutNewBranch).toHaveBeenCalledWith('codex/issue-7-test-lun2elv9');
-    expect(mockGit.applyMissingFileSystemChanges).toHaveBeenCalledWith([
-      { path: 'specs/07-test.md', content: 'Body\n' },
-      { path: 'plans/07-test-plan.md', content: '# Plan\n' },
-    ]);
+    expect(mockGit.getWorkingTreeFiles).toHaveBeenCalled();
     expect(mockGit.commitAndPush).toHaveBeenCalledWith('Fix #7: Auto implementation', 'codex/issue-7-test-lun2elv9');
     expect(mockOctokit.rest.pulls.create).toHaveBeenCalledWith(expect.objectContaining({
       head: 'codex/issue-7-test-lun2elv9',
@@ -230,7 +236,11 @@ describe('BotController', () => {
     }));
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 7,
-      body: expect.stringContaining('**Persisted artifacts:**'),
+      body: expect.stringContaining('**Why this run qualified for publication:**'),
+    }));
+    expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
+      issue_number: 7,
+      body: expect.stringContaining('**Updated files:**\n- `src/test.ts`'),
     }));
   });
 
@@ -356,8 +366,8 @@ describe('BotController', () => {
     const mockGit = {
       checkoutNewBranch: jest.fn(),
       hasWorkingTreeChanges: jest.fn(),
+      getWorkingTreeFiles: jest.fn(),
       commitAndPush: jest.fn(),
-      applyMissingFileSystemChanges: jest.fn(),
     };
     (GitManager as jest.Mock).mockImplementation(() => mockGit);
     mockOctokit.rest.issues.listComments
@@ -496,6 +506,92 @@ describe('BotController', () => {
     expect(mockGit.commitAndPush).not.toHaveBeenCalled();
   });
 
+  it('aborts implementation when the working tree only contains governance artifacts', async () => {
+    (CodexRunner as jest.Mock).mockImplementation(() => ({
+      implementFeature: jest.fn().mockResolvedValue({
+        status: 'completed',
+        summary: 'Updated the generated spec artifacts.',
+        changedFiles: ['specs/07-test.md', 'plans/07-test-plan.md'],
+        acceptanceCriteria: [],
+        verification: [],
+        remainingWork: [],
+        blockers: [],
+      }),
+    }));
+
+    const mockGit = {
+      checkoutNewBranch: jest.fn(),
+      hasWorkingTreeChanges: jest.fn().mockResolvedValue(true),
+      getWorkingTreeFiles: jest.fn().mockResolvedValue(['specs/07-test.md', 'plans/07-test-plan.md']),
+      commitAndPush: jest.fn(),
+    };
+    (GitManager as jest.Mock).mockImplementation(() => mockGit);
+    mockOctokit.rest.issues.listComments
+      .mockResolvedValueOnce({ data: [{ body: '**Implementation Plan**\n\n# Plan' }] })
+      .mockResolvedValueOnce({ data: [{ body: '**Implementation Plan**\n\n# Plan' }] });
+
+    await expect(controller.handleCommand({
+      number: 7,
+      author: 'eve',
+      body: 'ready for implementation',
+      labels: ['state:planned', 'model:strong'],
+      isPR: false,
+    })).rejects.toThrow(/changed only governance artifacts/);
+
+    expect(mockGit.commitAndPush).not.toHaveBeenCalled();
+    expect(mockOctokit.rest.pulls.create).not.toHaveBeenCalled();
+  });
+
+  it('aborts implementation when a broad feature only changes a single production file', async () => {
+    mockOctokit.rest.issues.get.mockResolvedValueOnce({
+      data: {
+        title: 'Large Feature',
+        body: [
+          '# Feature: Large Feature',
+          '',
+          '## Affected Areas',
+          '- API',
+          '- Controller',
+          '',
+          '## Scope',
+          '- **In Scope:** Complete the broad workflow',
+        ].join('\n'),
+      },
+    });
+    (CodexRunner as jest.Mock).mockImplementation(() => ({
+      implementFeature: jest.fn().mockResolvedValue({
+        status: 'completed',
+        summary: 'Implemented one part of the feature.',
+        changedFiles: ['src/foo.ts'],
+        acceptanceCriteria: [],
+        verification: [{ command: 'npm test', status: 'passed', details: 'ok' }],
+        remainingWork: [],
+        blockers: [],
+      }),
+    }));
+
+    const mockGit = {
+      checkoutNewBranch: jest.fn(),
+      hasWorkingTreeChanges: jest.fn().mockResolvedValue(true),
+      getWorkingTreeFiles: jest.fn().mockResolvedValue(['src/foo.ts']),
+      commitAndPush: jest.fn(),
+    };
+    (GitManager as jest.Mock).mockImplementation(() => mockGit);
+    mockOctokit.rest.issues.listComments
+      .mockResolvedValueOnce({ data: [{ body: '**Implementation Plan**\n\n# Plan\n\n## Affected Files\n- src/foo.ts\n- src/bar.ts\n- src/baz.ts' }] })
+      .mockResolvedValueOnce({ data: [{ body: '**Implementation Plan**\n\n# Plan\n\n## Affected Files\n- src/foo.ts\n- src/bar.ts\n- src/baz.ts' }] });
+
+    await expect(controller.handleCommand({
+      number: 7,
+      author: 'eve',
+      body: 'ready for implementation',
+      labels: ['state:planned', 'model:strong'],
+      isPR: false,
+    })).rejects.toThrow(/appears broad, but the observed implementation diff is too small/);
+
+    expect(mockGit.commitAndPush).not.toHaveBeenCalled();
+  });
+
   it('rejects unsupported non-codex agent labels', async () => {
     await expect(controller.handleCommand({
       number: 1,
@@ -517,7 +613,7 @@ describe('BotController', () => {
 
     expect(mockOctokit.rest.issues.createComment).toHaveBeenCalledWith(expect.objectContaining({
       issue_number: 15,
-      body: expect.stringContaining('ready for planning without questions'),
+      body: expect.stringContaining('Use `ready for planning`.'),
     }));
   });
 });

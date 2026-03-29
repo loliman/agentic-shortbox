@@ -21,7 +21,7 @@ export function parseCommand(text: string): ParsedCommand | null {
   }
 
   if (normalized === 'ready for planning') {
-    return { type: 'plan', force: false };
+    return { type: 'plan', force: true };
   }
 
   if (normalized === 'ready for planning without questions') {
@@ -52,7 +52,7 @@ export function suggestCommand(text: string): string | null {
   }
 
   if (normalized === 'ready for planning!') {
-    return 'Use `ready for planning without questions` if you want to skip clarification.';
+    return 'Use `ready for planning`.';
   }
 
   if (normalized.includes('ready to plan') || normalized.includes('ready to planning')) {
@@ -77,7 +77,7 @@ export function suggestCommand(text: string): string | null {
   }
 
   if (normalized.startsWith('ready')) {
-    return 'Unknown command. Supported commands are `ready for breakdown` (alias: `ready for specification`), `ready for planning`, `ready for planning without questions`, `ready for implementation`, `ready for rework`, and `ready for refinement <instruction>`.';
+    return 'Unknown command. Supported commands are `ready for breakdown` (alias: `ready for specification`), `ready for planning`, `ready for implementation`, `ready for rework`, and `ready for refinement <instruction>`.';
   }
 
   return null;

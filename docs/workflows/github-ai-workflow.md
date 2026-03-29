@@ -15,8 +15,9 @@ GitHub Actions are both the trigger surface and the runtime host.
 
 ## Issue Commands (Triggers)
 - `ready for specification` (Splits an epic into child issues)
-- `ready for planning` or `ready for planning without questions` (Creates a plan or forces one without clarification)
-- `ready for implementation` (Creates code changes, commits, and opens a PR)
+- `ready for breakdown` (Alias for `ready for specification`)
+- `ready for planning` (Creates a plan directly from the issue spec)
+- `ready for implementation` (Creates code changes and opens a PR only if the observed result is publishable)
 
 ## PR Commands (Triggers)
 - `ready for rework` on the PR or as the submitted review text (Collects PR review feedback and applies the requested rework to the active PR branch)
@@ -26,3 +27,12 @@ GitHub Actions are both the trigger surface and the runtime host.
 - Labels remain configuration until an explicit command comment is posted.
 - The state machine validates transitions such as `idle -> planning -> planned -> implementing -> in-review`.
 - Illegal transitions are rejected with a bot comment instead of silent failure.
+
+## Publication Model
+- Planning is non-dialog in the standard workflow.
+- Implementation, rework, and refinement are execution commands, not conversation starters.
+- Implementation publication is gated by observable repository evidence:
+  - changed files from git
+  - verification outcomes
+  - run-type-aware scope-confidence checks
+- Broad features, narrow features, and child subtasks are evaluated with different publication thresholds.

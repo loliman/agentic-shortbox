@@ -2,7 +2,7 @@ import { parseCommand, parseConfiguration, suggestCommand } from '../parser';
 
 describe('Command Parser', () => {
   it('parses "ready for planning" strictly', () => {
-    expect(parseCommand('ready for planning')).toEqual({ type: 'plan', force: false });
+    expect(parseCommand('ready for planning')).toEqual({ type: 'plan', force: true });
     expect(parseCommand('ready for planning without questions')).toEqual({ type: 'plan', force: true });
     expect(parseCommand('   READY FOR PLANNING!  ')).toBeNull();
   });
@@ -35,7 +35,7 @@ describe('Command Parser', () => {
   });
 
   it('suggests better command syntax for common near misses', () => {
-    expect(suggestCommand('ready for planning!')).toContain('ready for planning without questions');
+    expect(suggestCommand('ready for planning!')).toContain('ready for planning');
     expect(suggestCommand('ready to plan')).toContain('ready for planning');
     expect(suggestCommand('ready for refinement')).toContain('Add the instruction');
     expect(suggestCommand('ready to breakdown')).toContain('ready for breakdown');

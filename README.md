@@ -14,9 +14,9 @@ Open an Issue. Comment a command. The bot does the rest.
 |---|---|
 | *(open an issue)* | Bot welcomes you and explains the Codex workflow |
 | `ready for specification` | Splits an Epic into labelled sub-issues |
-| `ready for planning` | Generates a full implementation plan (hesitates if spec is vague) |
-| `ready for planning without questions` | Forces a plan without a clarification step |
-| `ready for implementation` | Runs Codex in the checked-out repo, commits to a branch, opens a PR |
+| `ready for breakdown` | Alias for `ready for specification` |
+| `ready for planning` | Generates a full implementation plan directly from the issue spec |
+| `ready for implementation` | Runs Codex in the checked-out repo and opens a PR only if the observed implementation is publishable |
 | `ready for rework` | On a PR: bot passes the linked feature spec, plan, and open review feedback to Codex |
 | `ready for refinement <instruction>` | On a PR: bot passes the linked feature spec, plan, and your refinement instruction to Codex |
 
@@ -59,7 +59,7 @@ jobs:
 
       - run: npm ci
 
-      - uses: christian-riese/agentic-shortbox@v6.5.7
+      - uses: christian-riese/agentic-shortbox@v6.5.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CODEX_SANDBOX_MODE: danger-full-access
@@ -116,6 +116,12 @@ Codex is then expected to inspect and obey:
 - `specs/`
 
 This keeps the system AI-first: the agent gathers its own repository context instead of relying on a giant prebuilt prompt dump.
+
+The current execution model is intentionally non-dialog for delivery work:
+- `ready for planning` produces a plan instead of starting a clarification loop.
+- `ready for implementation`, `ready for rework`, and `ready for refinement` do not ask follow-up questions.
+- Implementation PRs are publication-gated. The bot compares the observed repository diff and verification evidence against the requested scope before opening a PR.
+- Broad features, narrow features, and child subtasks are evaluated differently so the bot does not treat a thin one-file diff as a successful broad implementation.
 
 ---
 
